@@ -1,0 +1,42 @@
+# Example envctl configuration
+# Copy this to .envctl.yaml and customize for your project
+#
+# See: https://github.com/sentiolabs/envctl
+
+version: 1
+
+# Default environment when -e/--env not specified
+default_environment: dev
+
+# Environment definitions
+# Each environment points to an AWS Secrets Manager secret
+environments:
+  dev:
+    secret: myapp/dev
+    # region: us-west-2  # Optional: override AWS region
+
+  staging:
+    secret: myapp/staging
+
+  prod:
+    secret: myapp/prod
+
+# Optional: Additional secrets to include in all environments
+include:
+  # Pull all keys from a shared secret
+  - secret: shared/datadog
+
+  # Pull specific key and rename it
+  - secret: shared/stripe
+    key: test_key
+    as: STRIPE_SECRET_KEY
+
+  # Pull specific key, keep original name
+  - secret: shared/sendgrid
+    key: API_KEY
+
+# Optional: Explicit env var mappings using secret#key syntax
+# These take precedence over automatic loading
+mapping:
+  DATABASE_URL: myapp/dev#database_url
+  REDIS_URL: myapp/dev#redis_url

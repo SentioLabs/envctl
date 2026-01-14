@@ -1,0 +1,180 @@
+// Package aws provides AWS Secrets Manager integration.
+package aws
+
+import (
+	"context"
+	"encoding/json"
+	stderrors "errors"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
+	"github.com/aws/smithy-go"
+	"github.com/sentiolabs/envctl/internal/errors"
+)
+
+const (
+	// maxRetries is the maximum number of retry attempts.
+	maxRetries = 3
+	// baseBackoff is the base backoff duration for retries.
+	baseBackoff = 100 * time.Millisecond
+)
+
+// SecretsClient provides access to AWS Secrets Manager.
+type SecretsClient struct {
+	client *secretsmanager.Client
+	region string
+}
+
+// NewSecretsClient creates a new Secrets Manager client.
+func NewSecretsClient(ctx context.Context, region string) (*SecretsClient, error) {
+	var opts []func(*config.LoadOptions) error
+
+	if region != "" {
+		opts = append(opts, config.WithRegion(region))
+	}
+
+	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	if err != nil {
+		return nil, &errors.CredentialsError{Message: err.Error()}
+	}
+
+	client := secretsmanager.NewFromConfig(cfg)
+
+	return &SecretsClient{
+		client: client,
+		region: region,
+	}, nil
+}
+
+// GetSecret retrieves all key-value pairs from a secret.
+func (c *SecretsClient) GetSecret(ctx context.Context, secretName string) (map[string]string, error) {
+	input := &secretsmanager.GetSecretValueInput{
+		SecretId: aws.String(secretName),
+	}
+
+	var result *secretsmanager.GetSecretValueOutput
+	var err error
+
+	// Retry with exponential backoff
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		result, err = c.client.GetSecretValue(ctx, input)
+		if err == nil {
+			break
+		}
+
+		// Don't retry on certain errors
+		if isNonRetryableError(err) {
+			break
+		}
+
+		// Wait before retrying
+		if attempt < maxRetries-1 {
+			backoff := baseBackoff * time.Duration(1<<uint(attempt))
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+	}
+
+	if err != nil {
+		return nil, mapAWSError(secretName, err)
+	}
+
+	if result.SecretString == nil {
+		return nil, &errors.InvalidSecretFormatError{SecretName: secretName}
+	}
+
+	// Parse JSON
+	var secrets map[string]string
+	if err := json.Unmarshal([]byte(*result.SecretString), &secrets); err != nil {
+		return nil, &errors.InvalidSecretFormatError{SecretName: secretName}
+	}
+
+	return secrets, nil
+}
+
+// GetSecretKey retrieves a specific key from a secret.
+func (c *SecretsClient) GetSecretKey(ctx context.Context, secretName, key string) (string, error) {
+	secrets, err := c.GetSecret(ctx, secretName)
+	if err != nil {
+		return "", err
+	}
+
+	value, ok := secrets[key]
+	if !ok {
+		// Collect available keys for error message
+		keys := make([]string, 0, len(secrets))
+		for k := range secrets {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		return "", &errors.KeyNotFoundError{
+			SecretName:    secretName,
+			Key:           key,
+			AvailableKeys: keys,
+		}
+	}
+
+	return value, nil
+}
+
+// isNonRetryableError checks if an error should not be retried.
+func isNonRetryableError(err error) bool {
+	var notFound *types.ResourceNotFoundException
+	var invalid *types.InvalidParameterException
+	var invalidReq *types.InvalidRequestException
+
+	if stderrors.As(err, &notFound) ||
+		stderrors.As(err, &invalid) ||
+		stderrors.As(err, &invalidReq) {
+		return true
+	}
+
+	// Check for access denied via smithy API error
+	if isAccessDenied(err) {
+		return true
+	}
+
+	return false
+}
+
+// isAccessDenied checks if an error is an access denied error.
+func isAccessDenied(err error) bool {
+	var apiErr smithy.APIError
+	if stderrors.As(err, &apiErr) {
+		code := apiErr.ErrorCode()
+		return code == "AccessDeniedException" ||
+			code == "UnauthorizedAccess" ||
+			strings.Contains(code, "AccessDenied")
+	}
+	return false
+}
+
+// mapAWSError converts AWS errors to user-friendly error types.
+func mapAWSError(secretName string, err error) error {
+	var notFound *types.ResourceNotFoundException
+	if stderrors.As(err, &notFound) {
+		return &errors.SecretNotFoundError{SecretName: secretName}
+	}
+
+	if isAccessDenied(err) {
+		return &errors.AccessDeniedError{SecretName: secretName}
+	}
+
+	// Generic AWS error
+	return &errors.AWSError{
+		SecretName: secretName,
+		Operation:  "GetSecretValue",
+		Message:    err.Error(),
+		Hint:       "Check your AWS credentials and network connectivity",
+		Underlying: err,
+	}
+}
