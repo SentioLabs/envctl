@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sentiolabs/envctl/internal/aws"
 	"github.com/sentiolabs/envctl/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -62,8 +61,8 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintf(os.Stdout, "✓ Environment: %s\n", selectedEnv)
 
-	// Create AWS client
-	client, err := aws.NewSecretsClient(ctx, envConfig.Region)
+	// Create AWS client with caching
+	client, err := createSecretsClient(ctx, cfg, envConfig.Region)
 	if err != nil {
 		return err
 	}

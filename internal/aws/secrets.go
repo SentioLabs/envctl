@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/aws/smithy-go"
+	"github.com/sentiolabs/envctl/internal/cache"
 	"github.com/sentiolabs/envctl/internal/errors"
 )
 
@@ -26,19 +27,35 @@ const (
 
 // SecretsClient provides access to AWS Secrets Manager.
 type SecretsClient struct {
-	client *secretsmanager.Client
-	region string
+	client   *secretsmanager.Client
+	region   string
+	cache    *cache.Manager
+	noCache  bool
+	refresh  bool
+}
+
+// ClientOptions configures the secrets client.
+type ClientOptions struct {
+	Region   string
+	Cache    *cache.Manager
+	NoCache  bool  // Bypass cache for this request
+	Refresh  bool  // Force refresh and update cache
 }
 
 // NewSecretsClient creates a new Secrets Manager client.
 func NewSecretsClient(ctx context.Context, region string) (*SecretsClient, error) {
-	var opts []func(*config.LoadOptions) error
+	return NewSecretsClientWithOptions(ctx, ClientOptions{Region: region})
+}
 
-	if region != "" {
-		opts = append(opts, config.WithRegion(region))
+// NewSecretsClientWithOptions creates a new Secrets Manager client with options.
+func NewSecretsClientWithOptions(ctx context.Context, opts ClientOptions) (*SecretsClient, error) {
+	var loadOpts []func(*config.LoadOptions) error
+
+	if opts.Region != "" {
+		loadOpts = append(loadOpts, config.WithRegion(opts.Region))
 	}
 
-	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	cfg, err := config.LoadDefaultConfig(ctx, loadOpts...)
 	if err != nil {
 		return nil, &errors.CredentialsError{Message: err.Error()}
 	}
@@ -46,13 +63,39 @@ func NewSecretsClient(ctx context.Context, region string) (*SecretsClient, error
 	client := secretsmanager.NewFromConfig(cfg)
 
 	return &SecretsClient{
-		client: client,
-		region: region,
+		client:  client,
+		region:  opts.Region,
+		cache:   opts.Cache,
+		noCache: opts.NoCache,
+		refresh: opts.Refresh,
 	}, nil
 }
 
 // GetSecret retrieves all key-value pairs from a secret.
 func (c *SecretsClient) GetSecret(ctx context.Context, secretName string) (map[string]string, error) {
+	// Check cache first (unless disabled or refresh requested)
+	if c.cache != nil && !c.noCache && !c.refresh {
+		if cached, err := c.cache.Get(c.region, secretName); err == nil && cached != nil {
+			return cached, nil
+		}
+	}
+
+	// Fetch from AWS
+	secrets, err := c.fetchSecret(ctx, secretName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store in cache
+	if c.cache != nil && !c.noCache {
+		c.cache.Set(c.region, secretName, secrets)
+	}
+
+	return secrets, nil
+}
+
+// fetchSecret retrieves a secret from AWS with retry logic.
+func (c *SecretsClient) fetchSecret(ctx context.Context, secretName string) (map[string]string, error) {
 	input := &secretsmanager.GetSecretValueInput{
 		SecretId: aws.String(secretName),
 	}

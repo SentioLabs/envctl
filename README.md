@@ -10,6 +10,7 @@ A lightweight CLI tool that enables developers to use AWS Secrets Manager as the
 - **Self-documenting** - Config files declare what secrets an app needs without containing values
 - **AWS-native** - Leverages existing AWS credentials and IAM policies
 - **Docker Compose compatible** - Full support for `.env` file workflows
+- **Intelligent caching** - Secure local caching reduces AWS API calls and improves performance
 
 ## Installation
 
@@ -266,6 +267,80 @@ Examples:
 - `myapp/dev#DATABASE_URL` - key `DATABASE_URL` from secret `myapp/dev`
 - `shared/datadog#api_key` - key `api_key` from secret `shared/datadog`
 
+### Cache Configuration
+
+Configure caching behavior in your `.envctl.yaml`:
+
+```yaml
+version: 1
+default_environment: dev
+
+environments:
+  dev:
+    secret: myapp/dev
+
+# Cache settings (all optional)
+cache:
+  enabled: true       # Enable/disable caching (default: true)
+  ttl: "15m"          # Cache duration (default: 15m)
+  backend: "auto"     # Backend: auto, keyring, file, none
+```
+
+#### Cache Backends
+
+| Backend | Description |
+|---------|-------------|
+| `auto` | Automatically selects the best available backend (default) |
+| `keyring` | Uses OS keyring (macOS Keychain, Linux secret-service) |
+| `file` | Uses AES-256 encrypted files in `~/.cache/envctl/` |
+| `none` | Disables caching |
+
+## Caching
+
+envctl caches secrets locally to improve performance and reduce AWS API calls. Caching is enabled by default with a 15-minute TTL.
+
+### How It Works
+
+1. **First request**: Fetches secret from AWS, stores encrypted in local cache
+2. **Subsequent requests**: Returns cached value if still valid (within TTL)
+3. **Expiration**: After TTL expires, next request fetches fresh data from AWS
+
+### Security
+
+Cached secrets are stored securely:
+
+- **Keyring backend**: Uses OS-level credential storage (macOS Keychain, Linux secret-service)
+- **File backend**: AES-256-GCM encryption with machine-derived keys
+- **No plaintext**: Secrets are never stored in plaintext on disk
+- **Auto-disabled**: Caching is automatically disabled in CI environments and when running as root
+
+### Cache Control
+
+```bash
+# Bypass cache for a single command
+envctl run --no-cache -- make dev
+
+# Force refresh (fetch from AWS and update cache)
+envctl run --refresh -- make dev
+
+# Check cache status
+envctl cache status
+
+# Clear all cached secrets
+envctl cache clear
+```
+
+### CI/CD Environments
+
+Caching is automatically disabled when these environment variables are detected:
+- `CI`
+- `GITHUB_ACTIONS`
+- `GITLAB_CI`
+- `JENKINS_URL`
+- `CIRCLECI`
+- `TRAVIS`
+- `BUILDKITE`
+
 ## AWS Setup
 
 ### Authentication
@@ -335,6 +410,8 @@ aws secretsmanager put-secret-value \
 | `--config` | `-c` | Config file path (default: `.envctl.yaml`) |
 | `--env` | `-e` | Environment name (default: from config) |
 | `--verbose` | `-v` | Enable verbose output |
+| `--no-cache` | | Bypass secret cache for this request |
+| `--refresh` | | Force refresh secrets and update cache |
 
 ### Commands
 
@@ -425,6 +502,18 @@ Examples:
   source <(envctl completion bash)
 ```
 
+#### `envctl cache`
+
+Manage the local secret cache.
+
+```bash
+# Show cache status and statistics
+envctl cache status
+
+# Clear all cached secrets
+envctl cache clear
+```
+
 ## Examples
 
 ### Monorepo Setup
@@ -481,6 +570,8 @@ envctl is for **local development only**. In CI/CD and production:
 - **Memory safety** - Secrets are cleared from memory after use
 - **File permission warnings** - Alerts if `.env` files have insecure permissions
 - **Gitignore checks** - Warns if `.env` is not in `.gitignore`
+- **Encrypted cache** - Cached secrets use AES-256-GCM encryption or OS keyring
+- **CI-aware** - Caching automatically disabled in CI environments
 
 ## Troubleshooting
 
@@ -521,6 +612,33 @@ Ensure your AWS secret is a valid JSON object:
 
 ```bash
 aws secretsmanager get-secret-value --secret-id myapp/dev --query SecretString --output text | jq .
+```
+
+### Stale cached secrets
+
+If you've updated a secret in AWS and envctl is returning old values:
+
+```bash
+# Force refresh the cache
+envctl run --refresh -- make dev
+
+# Or clear the entire cache
+envctl cache clear
+
+# Or bypass cache entirely
+envctl run --no-cache -- make dev
+```
+
+### Cache not working
+
+```bash
+# Check cache status
+envctl cache status
+
+# Common reasons cache is disabled:
+# - Running as root user
+# - CI environment detected
+# - cache.enabled: false in config
 ```
 
 ## License

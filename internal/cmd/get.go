@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/sentiolabs/envctl/internal/aws"
+	"github.com/sentiolabs/envctl/internal/cache"
 	"github.com/sentiolabs/envctl/internal/config"
 	"github.com/sentiolabs/envctl/internal/env"
 	"github.com/spf13/cobra"
@@ -67,8 +68,8 @@ func runGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Create AWS client
-	client, err := aws.NewSecretsClient(ctx, envConfig.Region)
+	// Create AWS client with caching
+	client, err := createSecretsClient(ctx, cfg, envConfig.Region)
 	if err != nil {
 		return err
 	}
@@ -101,8 +102,23 @@ func getFromSecret(ctx context.Context, ref string) error {
 		return fmt.Errorf("key name is required (format: secret_name#key)")
 	}
 
-	// Create AWS client (use default region)
-	client, err := aws.NewSecretsClient(ctx, "")
+	// Set up cache for direct secret access
+	var cacheManager *cache.Manager
+	if !noCache {
+		cacheOpts := cache.DefaultOptions()
+		cacheManager, err = cache.NewManager(cacheOpts)
+		if err != nil {
+			verboseLog("Cache initialization failed: %v", err)
+		}
+	}
+
+	// Create AWS client with caching
+	client, err := aws.NewSecretsClientWithOptions(ctx, aws.ClientOptions{
+		Region:  "",
+		Cache:   cacheManager,
+		NoCache: noCache,
+		Refresh: refresh,
+	})
 	if err != nil {
 		return err
 	}

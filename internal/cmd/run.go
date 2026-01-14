@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"github.com/sentiolabs/envctl/internal/aws"
 	"github.com/sentiolabs/envctl/internal/config"
 	"github.com/sentiolabs/envctl/internal/env"
 	"github.com/sentiolabs/envctl/internal/runner"
@@ -65,8 +64,8 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 	verboseLog("Using environment: %s (secret: %s)", envName, envConfig.Secret)
 
-	// Create AWS client
-	client, err := aws.NewSecretsClient(ctx, envConfig.Region)
+	// Create AWS client with caching
+	client, err := createSecretsClient(ctx, cfg, envConfig.Region)
 	if err != nil {
 		return err
 	}

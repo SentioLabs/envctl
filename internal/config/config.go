@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sentiolabs/envctl/internal/errors"
 	"gopkg.in/yaml.v3"
@@ -24,6 +25,14 @@ type Config struct {
 	Environments       map[string]Environment `yaml:"environments"`
 	Include            []IncludeEntry         `yaml:"include,omitempty"`
 	Mapping            map[string]string      `yaml:"mapping,omitempty"`
+	Cache              *CacheConfig           `yaml:"cache,omitempty"`
+}
+
+// CacheConfig represents cache configuration.
+type CacheConfig struct {
+	Enabled *bool  `yaml:"enabled,omitempty"` // Pointer to distinguish unset from false
+	TTL     string `yaml:"ttl,omitempty"`     // Duration string like "15m", "1h"
+	Backend string `yaml:"backend,omitempty"` // "auto", "keyring", "file", "none"
 }
 
 // Environment represents a single environment configuration.
@@ -155,4 +164,35 @@ func (c *Config) GetEnvironment(name string) (*Environment, error) {
 		}
 	}
 	return &env, nil
+}
+
+// CacheEnabled returns whether caching is enabled in config.
+// Returns true if not explicitly disabled.
+func (c *Config) CacheEnabled() bool {
+	if c.Cache == nil || c.Cache.Enabled == nil {
+		return true // Enabled by default
+	}
+	return *c.Cache.Enabled
+}
+
+// CacheTTL returns the configured cache TTL.
+// Returns 0 if not set or invalid (caller should use default).
+func (c *Config) CacheTTL() time.Duration {
+	if c.Cache == nil || c.Cache.TTL == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(c.Cache.TTL)
+	if err != nil {
+		return 0
+	}
+	return d
+}
+
+// CacheBackend returns the configured cache backend.
+// Returns empty string if not set (caller should use default).
+func (c *Config) CacheBackend() string {
+	if c.Cache == nil {
+		return ""
+	}
+	return c.Cache.Backend
 }
