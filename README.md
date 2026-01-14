@@ -28,6 +28,36 @@ make build
 # Binary is at ./bin/envctl
 ```
 
+### Shell Completions
+
+Enable tab completion for commands, flags, and environment names:
+
+**Bash:**
+```bash
+# Linux
+envctl completion bash > /etc/bash_completion.d/envctl
+
+# macOS with Homebrew
+envctl completion bash > $(brew --prefix)/etc/bash_completion.d/envctl
+
+# Load in current session only
+source <(envctl completion bash)
+```
+
+**Zsh:**
+```bash
+# Add to fpath (persistent)
+envctl completion zsh > "${fpath[1]}/_envctl"
+
+# Or for Oh My Zsh
+envctl completion zsh > ~/.oh-my-zsh/completions/_envctl
+
+# Load in current session only
+source <(envctl completion zsh)
+```
+
+After installing completions, restart your shell or source your profile.
+
 ## Quick Start
 
 ### 1. Initialize Configuration
@@ -380,6 +410,19 @@ envctl init [flags]
 
 Flags:
   --secret NAME   Primary secret name for dev environment
+```
+
+#### `envctl completion`
+
+Generate shell completion scripts.
+
+```bash
+envctl completion [bash|zsh]
+
+Examples:
+  envctl completion bash > /etc/bash_completion.d/envctl
+  envctl completion zsh > "${fpath[1]}/_envctl"
+  source <(envctl completion bash)
 ```
 
 ## Examples

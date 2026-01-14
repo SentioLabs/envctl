@@ -4,7 +4,9 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sort"
 
+	"github.com/sentiolabs/envctl/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -31,6 +33,9 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "config file path (default: .envctl.yaml)")
 	rootCmd.PersistentFlags().StringVarP(&envName, "env", "e", "", "environment name (default: from config)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+
+	// Register custom completion for --env flag
+	rootCmd.RegisterFlagCompletionFunc("env", completeEnvironmentNames)
 }
 
 // Execute runs the root command.
@@ -46,4 +51,31 @@ func verboseLog(format string, args ...any) {
 	if verbose {
 		fmt.Fprintf(os.Stderr, "[envctl] "+format+"\n", args...)
 	}
+}
+
+// completeEnvironmentNames provides completion for environment names from config.
+func completeEnvironmentNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	// Try to find and load config
+	configPath := configFile
+	if configPath == "" {
+		var err error
+		configPath, err = config.FindConfig()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	// Collect environment names
+	envs := make([]string, 0, len(cfg.Environments))
+	for name := range cfg.Environments {
+		envs = append(envs, name)
+	}
+	sort.Strings(envs)
+
+	return envs, cobra.ShellCompDirectiveNoFileComp
 }
