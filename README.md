@@ -126,7 +126,31 @@ envctl run -v -- ./app
 
 ### Docker Compose Workflow
 
-Generate `.env` files when Docker Compose requires them:
+**Preferred: Direct injection (no files on disk)**
+
+Define environment variables without values in your compose file:
+
+```yaml
+services:
+  api:
+    build: .
+    environment:
+      - DATABASE_URL
+      - API_KEY
+      - REDIS_URL
+```
+
+Then run with envctl:
+
+```bash
+envctl run -- docker compose up
+```
+
+Docker inherits the variables from envctl's environment - secrets never touch disk.
+
+**Alternative: Generate .env file**
+
+When direct injection isn't possible (e.g., detached mode, CI pipelines):
 
 ```bash
 # Generate .env and start containers
