@@ -62,8 +62,8 @@ func runGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get environment config
-	envConfig, err := cfg.GetEnvironment(envName)
+	// Resolve environment config
+	envConfig, _, err := resolveEnvironmentConfig(cfg)
 	if err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func runGet(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build environment
-	builder := env.NewBuilder(client, cfg, envName)
+	builder := env.NewBuilder(client, cfg, appName, envName)
 	entries, err := builder.Build(ctx, nil)
 	if err != nil {
 		return err

@@ -16,6 +16,7 @@ import (
 var (
 	// Persistent flags
 	configFile string
+	appName    string
 	envName    string
 	verbose    bool
 	noCache    bool
@@ -36,12 +37,14 @@ generate .env files for Docker Compose workflows.`,
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "config file path (default: .envctl.yaml)")
+	rootCmd.PersistentFlags().StringVarP(&appName, "app", "a", "", "application name (default: from config)")
 	rootCmd.PersistentFlags().StringVarP(&envName, "env", "e", "", "environment name (default: from config)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&noCache, "no-cache", false, "bypass secret cache")
 	rootCmd.PersistentFlags().BoolVar(&refresh, "refresh", false, "force refresh secrets and update cache")
 
-	// Register custom completion for --env flag
+	// Register custom completions
+	rootCmd.RegisterFlagCompletionFunc("app", completeApplicationNames)
 	rootCmd.RegisterFlagCompletionFunc("env", completeEnvironmentNames)
 }
 
@@ -97,29 +100,92 @@ func createSecretsClient(ctx context.Context, cfg *config.Config, region string)
 	})
 }
 
+// completeApplicationNames provides completion for application names from config.
+func completeApplicationNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	cfg := loadConfigForCompletion()
+	if cfg == nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	apps := make([]string, 0, len(cfg.Applications))
+	for name := range cfg.Applications {
+		apps = append(apps, name)
+	}
+	sort.Strings(apps)
+
+	return apps, cobra.ShellCompDirectiveNoFileComp
+}
+
 // completeEnvironmentNames provides completion for environment names from config.
 func completeEnvironmentNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	// Try to find and load config
+	cfg := loadConfigForCompletion()
+	if cfg == nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	envs := make([]string, 0)
+
+	// If using applications and --app is set, get envs from that app
+	if cfg.HasApplications() && appName != "" {
+		if app, ok := cfg.Applications[appName]; ok {
+			for name := range app.Environments {
+				envs = append(envs, name)
+			}
+		}
+	} else if cfg.HasApplications() {
+		// Collect all unique env names from all applications
+		envSet := make(map[string]struct{})
+		for _, app := range cfg.Applications {
+			for name := range app.Environments {
+				envSet[name] = struct{}{}
+			}
+		}
+		for name := range envSet {
+			envs = append(envs, name)
+		}
+	} else {
+		// Legacy mode - use global environments
+		for name := range cfg.Environments {
+			envs = append(envs, name)
+		}
+	}
+
+	sort.Strings(envs)
+	return envs, cobra.ShellCompDirectiveNoFileComp
+}
+
+// loadConfigForCompletion loads the config file for shell completion.
+func loadConfigForCompletion() *config.Config {
 	configPath := configFile
 	if configPath == "" {
 		var err error
 		configPath, err = config.FindConfig()
 		if err != nil {
-			return nil, cobra.ShellCompDirectiveNoFileComp
+			return nil
 		}
 	}
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
+		return nil
 	}
+	return cfg
+}
 
-	// Collect environment names
-	envs := make([]string, 0, len(cfg.Environments))
-	for name := range cfg.Environments {
-		envs = append(envs, name)
+// resolveEnvironmentConfig resolves the environment config based on mode.
+// Returns the environment config and, if in application mode, the application config.
+func resolveEnvironmentConfig(cfg *config.Config) (*config.Environment, *config.Application, error) {
+	if cfg.HasApplications() {
+		env, app, err := cfg.GetApplicationEnvironment(appName, envName)
+		if err != nil {
+			return nil, nil, err
+		}
+		return env, app, nil
 	}
-	sort.Strings(envs)
-
-	return envs, cobra.ShellCompDirectiveNoFileComp
+	// Legacy mode
+	env, err := cfg.GetEnvironment(envName)
+	if err != nil {
+		return nil, nil, err
+	}
+	return env, nil, nil
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/sentiolabs/envctl/internal/aws"
 	"github.com/sentiolabs/envctl/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -50,14 +51,23 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get environment config
+	// Resolve environment config
+	envConfig, app, err := resolveEnvironmentConfig(cfg)
+	if err != nil {
+		return err
+	}
+
+	// Display what we're validating
+	if cfg.HasApplications() {
+		selectedApp := appName
+		if selectedApp == "" {
+			selectedApp = cfg.DefaultApplication
+		}
+		fmt.Fprintf(os.Stdout, "✓ Application: %s\n", selectedApp)
+	}
 	selectedEnv := envName
 	if selectedEnv == "" {
 		selectedEnv = cfg.DefaultEnvironment
-	}
-	envConfig, err := cfg.GetEnvironment(selectedEnv)
-	if err != nil {
-		return err
 	}
 	fmt.Fprintf(os.Stdout, "✓ Environment: %s\n", selectedEnv)
 
@@ -77,44 +87,74 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stdout, "✓ Secret '%s': accessible (%d keys)\n", envConfig.Secret, len(secrets))
 	totalKeys += len(secrets)
 
-	// Test include secrets
-	for _, inc := range cfg.Include {
-		if inc.Key != "" {
-			// Test specific key access
-			_, err := client.GetSecretKey(ctx, inc.Secret, inc.Key)
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(os.Stdout, "✓ Include '%s#%s': accessible\n", inc.Secret, inc.Key)
-			totalKeys++
-		} else {
-			// Test full secret access
-			incSecrets, err := client.GetSecret(ctx, inc.Secret)
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(os.Stdout, "✓ Include '%s': accessible (%d keys)\n", inc.Secret, len(incSecrets))
-			totalKeys += len(incSecrets)
-		}
+	// Test global include secrets
+	totalKeys += validateIncludes(client, ctx, cfg.Include, "global")
+
+	// Test app-level include secrets
+	if app != nil && len(app.Include) > 0 {
+		totalKeys += validateIncludes(client, ctx, app.Include, "app")
 	}
 
-	// Test mapping references
+	// Test global mapping references
 	if len(cfg.Mapping) > 0 {
-		for envVar, ref := range cfg.Mapping {
-			secretRef, err := config.ParseSecretRef(ref)
-			if err != nil {
-				return err
-			}
-			_, err = client.GetSecretKey(ctx, secretRef.SecretName, secretRef.KeyName)
-			if err != nil {
-				return fmt.Errorf("mapping %s -> %s: %w", envVar, ref, err)
-			}
+		if err := validateMapping(client, ctx, cfg.Mapping, "global"); err != nil {
+			return err
 		}
-		fmt.Fprintf(os.Stdout, "✓ Mapping: %d entries resolved\n", len(cfg.Mapping))
+		fmt.Fprintf(os.Stdout, "✓ Global mapping: %d entries resolved\n", len(cfg.Mapping))
+	}
+
+	// Test app-level mapping references
+	if app != nil && len(app.Mapping) > 0 {
+		if err := validateMapping(client, ctx, app.Mapping, "app"); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stdout, "✓ App mapping: %d entries resolved\n", len(app.Mapping))
 	}
 
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintf(os.Stdout, "Total: %d environment variables will be set\n", totalKeys)
 
+	return nil
+}
+
+// validateIncludes tests include secrets and returns count of keys.
+func validateIncludes(client *aws.SecretsClient, ctx context.Context, includes []config.IncludeEntry, scope string) int {
+	totalKeys := 0
+	for _, inc := range includes {
+		if inc.Key != "" {
+			// Test specific key access
+			_, err := client.GetSecretKey(ctx, inc.Secret, inc.Key)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "✗ Include (%s) '%s#%s': %v\n", scope, inc.Secret, inc.Key, err)
+				continue
+			}
+			fmt.Fprintf(os.Stdout, "✓ Include (%s) '%s#%s': accessible\n", scope, inc.Secret, inc.Key)
+			totalKeys++
+		} else {
+			// Test full secret access
+			incSecrets, err := client.GetSecret(ctx, inc.Secret)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "✗ Include (%s) '%s': %v\n", scope, inc.Secret, err)
+				continue
+			}
+			fmt.Fprintf(os.Stdout, "✓ Include (%s) '%s': accessible (%d keys)\n", scope, inc.Secret, len(incSecrets))
+			totalKeys += len(incSecrets)
+		}
+	}
+	return totalKeys
+}
+
+// validateMapping tests mapping entries.
+func validateMapping(client *aws.SecretsClient, ctx context.Context, mapping map[string]string, scope string) error {
+	for envVar, ref := range mapping {
+		secretRef, err := config.ParseSecretRef(ref)
+		if err != nil {
+			return err
+		}
+		_, err = client.GetSecretKey(ctx, secretRef.SecretName, secretRef.KeyName)
+		if err != nil {
+			return fmt.Errorf("mapping (%s) %s -> %s: %w", scope, envVar, ref, err)
+		}
+	}
 	return nil
 }

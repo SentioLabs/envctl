@@ -20,12 +20,21 @@ const (
 
 // Config represents the root configuration structure.
 type Config struct {
-	Version            int                    `yaml:"version"`
-	DefaultEnvironment string                 `yaml:"default_environment"`
-	Environments       map[string]Environment `yaml:"environments"`
-	Include            []IncludeEntry         `yaml:"include,omitempty"`
-	Mapping            map[string]string      `yaml:"mapping,omitempty"`
-	Cache              *CacheConfig           `yaml:"cache,omitempty"`
+	Version            int                       `yaml:"version"`
+	DefaultApplication string                    `yaml:"default_application,omitempty"`
+	DefaultEnvironment string                    `yaml:"default_environment,omitempty"`
+	Applications       map[string]*Application   `yaml:"applications,omitempty"`
+	Environments       map[string]Environment    `yaml:"environments,omitempty"`
+	Include            []IncludeEntry            `yaml:"include,omitempty"`
+	Mapping            map[string]string         `yaml:"mapping,omitempty"`
+	Cache              *CacheConfig              `yaml:"cache,omitempty"`
+}
+
+// Application represents an application with its environment configurations.
+type Application struct {
+	Environments map[string]Environment `yaml:",inline"`
+	Include      []IncludeEntry         `yaml:"include,omitempty"`
+	Mapping      map[string]string      `yaml:"mapping,omitempty"`
 }
 
 // CacheConfig represents cache configuration.
@@ -116,14 +125,44 @@ func (c *Config) Validate(path string) error {
 		}
 	}
 
-	if len(c.Environments) == 0 {
+	// Must have either applications or environments (or both for migration)
+	if len(c.Applications) == 0 && len(c.Environments) == 0 {
 		return &errors.ConfigError{
 			Path:    path,
-			Message: "no environments defined",
+			Message: "no applications or environments defined",
 		}
 	}
 
-	if c.DefaultEnvironment != "" {
+	// Validate applications
+	for appName, app := range c.Applications {
+		if len(app.Environments) == 0 {
+			return &errors.ConfigError{
+				Path:    path,
+				Message: "application " + appName + " has no environments defined",
+			}
+		}
+		for envName, env := range app.Environments {
+			if env.Secret == "" {
+				return &errors.ConfigError{
+					Path:    path,
+					Message: "application " + appName + " environment " + envName + " is missing required 'secret' field",
+				}
+			}
+		}
+	}
+
+	// Validate default_application reference
+	if c.DefaultApplication != "" {
+		if _, ok := c.Applications[c.DefaultApplication]; !ok {
+			return &errors.ConfigError{
+				Path:    path,
+				Message: "default_application references undefined application: " + c.DefaultApplication,
+			}
+		}
+	}
+
+	// Validate legacy environments (for backwards compatibility)
+	if c.DefaultEnvironment != "" && len(c.Environments) > 0 {
 		if _, ok := c.Environments[c.DefaultEnvironment]; !ok {
 			return &errors.ConfigError{
 				Path:    path,
@@ -144,8 +183,14 @@ func (c *Config) Validate(path string) error {
 	return nil
 }
 
+// HasApplications returns true if the config uses application-based structure.
+func (c *Config) HasApplications() bool {
+	return len(c.Applications) > 0
+}
+
 // GetEnvironment returns the environment config for the given name.
 // If name is empty, returns the default environment.
+// This is for legacy (non-application) mode.
 func (c *Config) GetEnvironment(name string) (*Environment, error) {
 	if name == "" {
 		name = c.DefaultEnvironment
@@ -164,6 +209,56 @@ func (c *Config) GetEnvironment(name string) (*Environment, error) {
 		}
 	}
 	return &env, nil
+}
+
+// GetApplication returns the application config for the given name.
+// If name is empty, returns the default application.
+func (c *Config) GetApplication(name string) (*Application, error) {
+	if name == "" {
+		name = c.DefaultApplication
+	}
+	if name == "" {
+		// No name provided and no default set - use first application
+		for _, app := range c.Applications {
+			return app, nil
+		}
+	}
+
+	app, ok := c.Applications[name]
+	if !ok {
+		return nil, &errors.ConfigError{
+			Message: "application not found: " + name,
+		}
+	}
+	return app, nil
+}
+
+// GetApplicationEnvironment returns the environment config for an application.
+// If appName is empty, uses default_application.
+// If envName is empty, uses default_environment.
+func (c *Config) GetApplicationEnvironment(appName, envName string) (*Environment, *Application, error) {
+	app, err := c.GetApplication(appName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if envName == "" {
+		envName = c.DefaultEnvironment
+	}
+	if envName == "" {
+		// No name provided and no default set - use first environment
+		for _, env := range app.Environments {
+			return &env, app, nil
+		}
+	}
+
+	env, ok := app.Environments[envName]
+	if !ok {
+		return nil, nil, &errors.ConfigError{
+			Message: "environment " + envName + " not found in application " + appName,
+		}
+	}
+	return &env, app, nil
 }
 
 // CacheEnabled returns whether caching is enabled in config.

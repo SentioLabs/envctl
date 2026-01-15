@@ -31,3 +31,4 @@ Thumbs.db
 
 # Local config (if customized)
 .envctl.local.yaml
+.envctl.yaml

@@ -58,7 +58,7 @@ environments:
 			content: `version: 1
 `,
 			wantErr: true,
-			errMsg:  "no environments defined",
+			errMsg:  "no applications or environments defined",
 		},
 		{
 			name: "missing secret in environment",

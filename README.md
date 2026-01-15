@@ -234,25 +234,102 @@ mapping:
   LEGACY_API_KEY: legacy-system/credentials#api_key
 ```
 
+### Multi-Application Configuration
+
+For monorepos or projects with multiple applications, use the `applications` block:
+
+```yaml
+version: 1
+default_application: core-api
+default_environment: dev
+
+# Application-centric hierarchy
+applications:
+  core-api:
+    dev:
+      secret: dev/myorg/core-api/app-secrets
+      region: us-east-1
+    staging:
+      secret: staging/myorg/core-api/app-secrets
+    prod:
+      secret: prod/myorg/core-api/app-secrets
+      region: us-west-2
+
+  worker:
+    dev:
+      secret: dev/myorg/worker/app-secrets
+    staging:
+      secret: staging/myorg/worker/app-secrets
+    # App-level includes and mappings
+    include:
+      - secret: shared/worker-specific
+    mapping:
+      WORKER_QUEUE: shared/queues#worker_url
+
+# Global includes (apply to all applications)
+include:
+  - secret: shared/datadog
+
+# Global mappings (apply to all applications)
+mapping:
+  DD_API_KEY: shared/datadog#api_key
+```
+
+Run with the `--app` flag:
+
+```bash
+# Use default application from config
+envctl run -- make dev
+
+# Specify application
+envctl -a core-api -e dev run -- go run ./cmd/server
+envctl -a worker -e staging run -- python worker.py
+
+# Validate specific application
+envctl validate -a core-api
+```
+
+When using applications:
+- Global `include` and `mapping` entries apply to all applications
+- App-level `include` and `mapping` override globals
+- Both `--app/-a` and `--env/-e` flags support shell completion
+
 ### Configuration Precedence
 
 When resolving environment variables, sources are applied in this order (later wins):
 
 1. Primary `secret` for the environment (all keys)
-2. `include` entries (in order specified)
-3. Explicit `mapping` entries
-4. Command-line overrides (`--set KEY=VALUE`)
+2. Global `include` entries (in order specified)
+3. App-level `include` entries (in order specified)
+4. Global `mapping` entries
+5. App-level `mapping` entries
+6. Command-line overrides (`--set KEY=VALUE`)
 
 ### AWS Secret Format
 
-Secrets in AWS Secrets Manager must be JSON objects:
+Secrets in AWS Secrets Manager can be JSON objects or plain text:
 
+**JSON secrets (multiple key-value pairs):**
 ```json
 {
   "DATABASE_URL": "postgres://user:pass@host:5432/db",
   "REDIS_URL": "redis://localhost:6379",
   "API_KEY": "sk-..."
 }
+```
+
+**Plain text secrets (single value):**
+```
+my-redis-password
+```
+
+Plain text secrets are exposed as a single key named `_value`. Use the `as` field to rename it:
+
+```yaml
+include:
+  - secret: myapp/redis-password
+    key: _value
+    as: REDIS_PASSWORD
 ```
 
 ### Secret Reference Syntax
@@ -408,6 +485,7 @@ aws secretsmanager put-secret-value \
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--config` | `-c` | Config file path (default: `.envctl.yaml`) |
+| `--app` | `-a` | Application name (default: from config) |
 | `--env` | `-e` | Environment name (default: from config) |
 | `--verbose` | `-v` | Enable verbose output |
 | `--no-cache` | | Bypass secret cache for this request |

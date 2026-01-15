@@ -134,13 +134,14 @@ func (c *SecretsClient) fetchSecret(ctx context.Context, secretName string) (map
 		return nil, &errors.InvalidSecretFormatError{SecretName: secretName}
 	}
 
-	// Parse JSON
+	// Try JSON first
 	var secrets map[string]string
-	if err := json.Unmarshal([]byte(*result.SecretString), &secrets); err != nil {
-		return nil, &errors.InvalidSecretFormatError{SecretName: secretName}
+	if err := json.Unmarshal([]byte(*result.SecretString), &secrets); err == nil {
+		return secrets, nil
 	}
 
-	return secrets, nil
+	// Fall back to plain text - expose as "_value" key
+	return map[string]string{"_value": strings.TrimSpace(*result.SecretString)}, nil
 }
 
 // GetSecretKey retrieves a specific key from a secret.

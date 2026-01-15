@@ -70,13 +70,13 @@ func (e *AccessDeniedError) Error() string {
 	return fmt.Sprintf("access denied to %q - check your IAM permissions", e.SecretName)
 }
 
-// InvalidSecretFormatError is returned when a secret is not valid JSON.
+// InvalidSecretFormatError is returned when a secret has an unsupported format.
 type InvalidSecretFormatError struct {
 	SecretName string
 }
 
 func (e *InvalidSecretFormatError) Error() string {
-	return fmt.Sprintf("secret %q is not valid JSON - expected {\"KEY\": \"VALUE\"} format", e.SecretName)
+	return fmt.Sprintf("secret %q has no string value (binary secrets are not supported)", e.SecretName)
 }
 
 // KeyNotFoundError is returned when a key doesn't exist in a secret.

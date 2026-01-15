@@ -51,14 +51,14 @@ func runEnv(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get environment config
+	// Resolve environment config
+	envConfig, _, err := resolveEnvironmentConfig(cfg)
+	if err != nil {
+		return err
+	}
 	selectedEnv := envName
 	if selectedEnv == "" {
 		selectedEnv = cfg.DefaultEnvironment
-	}
-	envConfig, err := cfg.GetEnvironment(selectedEnv)
-	if err != nil {
-		return err
 	}
 	verboseLog("Using environment: %s (secret: %s)", selectedEnv, envConfig.Secret)
 
@@ -69,7 +69,7 @@ func runEnv(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build environment
-	builder := env.NewBuilder(client, cfg, selectedEnv)
+	builder := env.NewBuilder(client, cfg, appName, envName)
 	entries, err := builder.Build(ctx, nil)
 	if err != nil {
 		return err
