@@ -2,10 +2,18 @@ package cache
 
 import (
 	"encoding/json"
+	"errors"
 	"sync"
+	"time"
 
 	"github.com/zalando/go-keyring"
 )
+
+// keyringTimeout is how long to wait for keyring operations during availability check.
+const keyringTimeout = 2 * time.Second
+
+// errKeyringTimeout is returned when the keyring doesn't respond in time.
+var errKeyringTimeout = errors.New("keyring timeout: secret-service not responding")
 
 const (
 	// keyringService is the service name used in the OS keyring.
@@ -23,11 +31,25 @@ type KeyringBackend struct {
 
 // NewKeyringBackend creates a new keyring-based cache backend.
 func NewKeyringBackend() (*KeyringBackend, error) {
-	// Test if keyring is available by trying to access it
-	_, err := keyring.Get(keyringService, keyringIndexKey)
-	if err != nil && err != keyring.ErrNotFound {
-		// Keyring might not be available (e.g., no GUI session on Linux)
-		return nil, err
+	// Test if keyring is available with timeout
+	type result struct {
+		err error
+	}
+	resultCh := make(chan result, 1)
+
+	go func() {
+		_, err := keyring.Get(keyringService, keyringIndexKey)
+		resultCh <- result{err: err}
+	}()
+
+	select {
+	case r := <-resultCh:
+		if r.err != nil && r.err != keyring.ErrNotFound {
+			// Keyring might not be available (e.g., no GUI session on Linux)
+			return nil, r.err
+		}
+	case <-time.After(keyringTimeout):
+		return nil, errKeyringTimeout
 	}
 
 	return &KeyringBackend{}, nil
@@ -191,10 +213,23 @@ func (k *KeyringBackend) removeFromIndex(key string) error {
 }
 
 // IsKeyringAvailable checks if the OS keyring is available.
+// Uses a timeout to avoid hanging on unresponsive secret-service daemons.
 func IsKeyringAvailable() bool {
-	// Try to access the keyring
-	_, err := keyring.Get(keyringService, "_test_availability")
-	// ErrNotFound means keyring is available but key doesn't exist
-	// Any other error means keyring is not available
-	return err == nil || err == keyring.ErrNotFound
+	resultCh := make(chan bool, 1)
+
+	go func() {
+		// Try to access the keyring
+		_, err := keyring.Get(keyringService, "_test_availability")
+		// ErrNotFound means keyring is available but key doesn't exist
+		// Any other error means keyring is not available
+		resultCh <- (err == nil || err == keyring.ErrNotFound)
+	}()
+
+	select {
+	case result := <-resultCh:
+		return result
+	case <-time.After(keyringTimeout):
+		// Keyring is hanging, not available
+		return false
+	}
 }
