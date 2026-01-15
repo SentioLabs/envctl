@@ -36,10 +36,11 @@ type SecretsClient struct {
 
 // ClientOptions configures the secrets client.
 type ClientOptions struct {
-	Region   string
-	Cache    *cache.Manager
-	NoCache  bool  // Bypass cache for this request
-	Refresh  bool  // Force refresh and update cache
+	Region  string
+	Profile string
+	Cache   *cache.Manager
+	NoCache bool // Bypass cache for this request
+	Refresh bool // Force refresh and update cache
 }
 
 // NewSecretsClient creates a new Secrets Manager client.
@@ -53,6 +54,9 @@ func NewSecretsClientWithOptions(ctx context.Context, opts ClientOptions) (*Secr
 
 	if opts.Region != "" {
 		loadOpts = append(loadOpts, config.WithRegion(opts.Region))
+	}
+	if opts.Profile != "" {
+		loadOpts = append(loadOpts, config.WithSharedConfigProfile(opts.Profile))
 	}
 
 	cfg, err := config.LoadDefaultConfig(ctx, loadOpts...)

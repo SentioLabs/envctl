@@ -72,7 +72,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stdout, "✓ Environment: %s\n", selectedEnv)
 
 	// Create AWS client with caching
-	client, err := createSecretsClient(ctx, cfg, envConfig.Region)
+	client, err := createSecretsClient(ctx, cfg, envConfig.Region, envConfig.Profile)
 	if err != nil {
 		return err
 	}

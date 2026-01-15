@@ -46,8 +46,9 @@ type CacheConfig struct {
 
 // Environment represents a single environment configuration.
 type Environment struct {
-	Secret string `yaml:"secret"`
-	Region string `yaml:"region,omitempty"`
+	Secret  string `yaml:"secret"`
+	Region  string `yaml:"region,omitempty"`
+	Profile string `yaml:"profile,omitempty"`
 }
 
 // IncludeEntry represents an additional secret to include.

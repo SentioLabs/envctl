@@ -64,7 +64,7 @@ func verboseLog(format string, args ...any) {
 }
 
 // createSecretsClient creates an AWS Secrets Manager client with caching support.
-func createSecretsClient(ctx context.Context, cfg *config.Config, region string) (*aws.SecretsClient, error) {
+func createSecretsClient(ctx context.Context, cfg *config.Config, region, profile string) (*aws.SecretsClient, error) {
 	var cacheManager *cache.Manager
 
 	// Set up cache if enabled (and not bypassed)
@@ -92,8 +92,13 @@ func createSecretsClient(ctx context.Context, cfg *config.Config, region string)
 		}
 	}
 
+	if profile != "" {
+		verboseLog("Using AWS profile: %s", profile)
+	}
+
 	return aws.NewSecretsClientWithOptions(ctx, aws.ClientOptions{
 		Region:  region,
+		Profile: profile,
 		Cache:   cacheManager,
 		NoCache: noCache,
 		Refresh: refresh,

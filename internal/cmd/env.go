@@ -63,7 +63,7 @@ func runEnv(cmd *cobra.Command, args []string) error {
 	verboseLog("Using environment: %s (secret: %s)", selectedEnv, envConfig.Secret)
 
 	// Create AWS client with caching
-	client, err := createSecretsClient(ctx, cfg, envConfig.Region)
+	client, err := createSecretsClient(ctx, cfg, envConfig.Region, envConfig.Profile)
 	if err != nil {
 		return err
 	}

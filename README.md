@@ -229,9 +229,11 @@ default_environment: dev
 environments:
   dev:
     secret: myapp/dev
-    region: us-west-2  # Override AWS region
+    region: us-west-2       # Override AWS region
+    profile: mycompany-dev  # Use specific AWS profile
   staging:
     secret: myapp/staging
+    profile: mycompany-staging
   prod:
     secret: myapp/prod
 
@@ -273,8 +275,10 @@ applications:
     dev:
       secret: dev/myorg/core-api/app-secrets
       region: us-east-1
+      profile: mycompany-dev
     staging:
       secret: staging/myorg/core-api/app-secrets
+      profile: mycompany-staging
     prod:
       secret: prod/myorg/core-api/app-secrets
       region: us-west-2
@@ -463,8 +467,16 @@ export AWS_ACCESS_KEY_ID=...
 export AWS_SECRET_ACCESS_KEY=...
 envctl run -- make dev
 
-# Using named profile
+# Using named profile (via environment)
 export AWS_PROFILE=my-profile
+envctl run -- make dev
+
+# Using named profile (via config - preferred)
+# In .envctl.yaml:
+#   environments:
+#     dev:
+#       secret: myapp/dev
+#       profile: my-profile
 envctl run -- make dev
 ```
 

@@ -26,6 +26,7 @@ Use when you have one application or want a flat structure.
     dev:
       secret: myapp/dev           # AWS secret name (required)
       region: us-east-1           # Optional, defaults to AWS_REGION
+      profile: mycompany-dev      # Optional, defaults to AWS_PROFILE
     staging:
       secret: myapp/staging
     prod:
@@ -43,6 +44,7 @@ Use when you have multiple apps sharing a config or want app-level isolation.
       dev:
         secret: myorg/api/dev
         region: us-east-1
+        profile: mycompany-dev
       staging:
         secret: myorg/api/staging
       # App-level includes (only for this app)
