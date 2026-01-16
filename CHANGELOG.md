@@ -2,7 +2,13 @@
 
 All notable changes to envctl will be documented in this file.
 
-## [Unreleased]
+## [0.1.1] - 2026-01-16
+
+### Features
+
+- Add fallback version detection for go install
+
+## [0.1.0] - 2026-01-16
 
 ### Documentation
 
@@ -10,6 +16,7 @@ All notable changes to envctl will be documented in this file.
 
 ### Features
 
+- Add git-cliff changelog and version command
 - Change default to mappings-only mode (**BREAKING**)
 - Add AWS profile support in environment config
 
