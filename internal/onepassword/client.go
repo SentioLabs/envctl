@@ -211,7 +211,8 @@ func checkCLI() error {
 	_, err := exec.LookPath("op")
 	if err != nil {
 		return &errors.CredentialsError{
-			Message: "1Password CLI (op) not found. Please install it: https://developer.1password.com/docs/cli/get-started/",
+			Message: "1Password CLI (op) not found. " +
+				"Please install it: https://developer.1password.com/docs/cli/get-started/",
 		}
 	}
 	return nil

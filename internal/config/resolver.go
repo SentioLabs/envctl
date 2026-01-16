@@ -6,6 +6,9 @@ import (
 	"github.com/sentiolabs/envctl/internal/errors"
 )
 
+// secretRefParts is the expected number of parts when splitting secret#key references.
+const secretRefParts = 2
+
 // SecretRef represents a parsed secret reference.
 type SecretRef struct {
 	SecretName string
@@ -22,7 +25,7 @@ func ParseSecretRef(ref string) (*SecretRef, error) {
 		}
 	}
 
-	parts := strings.SplitN(ref, "#", 2)
+	parts := strings.SplitN(ref, "#", secretRefParts)
 
 	secretName := strings.TrimSpace(parts[0])
 	if secretName == "" {
@@ -36,7 +39,7 @@ func ParseSecretRef(ref string) (*SecretRef, error) {
 		SecretName: secretName,
 	}
 
-	if len(parts) == 2 {
+	if len(parts) == secretRefParts {
 		keyName := strings.TrimSpace(parts[1])
 		if keyName == "" {
 			return nil, &errors.SecretRefError{

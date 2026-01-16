@@ -10,6 +10,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// keyValueParts is the expected number of parts when splitting KEY=VALUE strings.
+const keyValueParts = 2
+
 var (
 	setFlags []string
 
@@ -92,8 +95,8 @@ func runRun(cmd *cobra.Command, args []string) error {
 func parseOverrides(flags []string) map[string]string {
 	overrides := make(map[string]string)
 	for _, flag := range flags {
-		parts := strings.SplitN(flag, "=", 2)
-		if len(parts) == 2 {
+		parts := strings.SplitN(flag, "=", keyValueParts)
+		if len(parts) == keyValueParts {
 			overrides[parts[0]] = parts[1]
 		}
 	}

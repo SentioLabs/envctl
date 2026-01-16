@@ -44,7 +44,7 @@ func NewKeyringBackend() (*KeyringBackend, error) {
 
 	select {
 	case r := <-resultCh:
-		if r.err != nil && r.err != keyring.ErrNotFound {
+		if r.err != nil && !errors.Is(r.err, keyring.ErrNotFound) {
 			// Keyring might not be available (e.g., no GUI session on Linux)
 			return nil, r.err
 		}
@@ -67,9 +67,9 @@ func (k *KeyringBackend) Get(key string) (*Entry, error) {
 
 	data, err := keyring.Get(keyringService, key)
 	if err != nil {
-		if err == keyring.ErrNotFound {
+		if errors.Is(err, keyring.ErrNotFound) {
 			k.missCount++
-			return nil, nil
+			return nil, nil //nolint:nilnil // nil,nil indicates cache miss (not an error)
 		}
 		return nil, err
 	}
@@ -77,17 +77,17 @@ func (k *KeyringBackend) Get(key string) (*Entry, error) {
 	var entry Entry
 	if err := json.Unmarshal([]byte(data), &entry); err != nil {
 		// Corrupted - delete and return nil
-		keyring.Delete(keyringService, key)
+		_ = keyring.Delete(keyringService, key)
 		k.missCount++
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil,nil indicates cache miss (not an error)
 	}
 
 	// Check validity
 	if !entry.IsValid() {
-		keyring.Delete(keyringService, key)
-		k.removeFromIndex(key)
+		_ = keyring.Delete(keyringService, key)
+		_ = k.removeFromIndex(key)
 		k.missCount++
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil,nil indicates cache miss (not an error)
 	}
 
 	k.hitCount++
@@ -118,7 +118,7 @@ func (k *KeyringBackend) Delete(key string) error {
 	defer k.mu.Unlock()
 
 	err := keyring.Delete(keyringService, key)
-	if err != nil && err != keyring.ErrNotFound {
+	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return err
 	}
 
@@ -135,11 +135,11 @@ func (k *KeyringBackend) Clear() error {
 
 	// Delete all entries
 	for _, key := range keys {
-		keyring.Delete(keyringService, key)
+		_ = keyring.Delete(keyringService, key)
 	}
 
 	// Delete index
-	keyring.Delete(keyringService, keyringIndexKey)
+	_ = keyring.Delete(keyringService, keyringIndexKey)
 
 	k.hitCount = 0
 	k.missCount = 0
@@ -171,7 +171,7 @@ func (k *KeyringBackend) getIndex() []string {
 	}
 
 	var keys []string
-	json.Unmarshal([]byte(data), &keys)
+	_ = json.Unmarshal([]byte(data), &keys)
 	return keys
 }
 
@@ -204,7 +204,7 @@ func (k *KeyringBackend) removeFromIndex(key string) error {
 	}
 
 	if len(filtered) == 0 {
-		keyring.Delete(keyringService, keyringIndexKey)
+		_ = keyring.Delete(keyringService, keyringIndexKey)
 		return nil
 	}
 
@@ -222,7 +222,7 @@ func IsKeyringAvailable() bool {
 		_, err := keyring.Get(keyringService, "_test_availability")
 		// ErrNotFound means keyring is available but key doesn't exist
 		// Any other error means keyring is not available
-		resultCh <- (err == nil || err == keyring.ErrNotFound)
+		resultCh <- (err == nil || errors.Is(err, keyring.ErrNotFound))
 	}()
 
 	select {

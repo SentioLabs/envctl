@@ -147,7 +147,14 @@ func (b *Builder) resolveConfig() error {
 
 // processIncludes processes a list of include entries.
 // When includeAll is false, entries without a specific key will error.
-func (b *Builder) processIncludes(ctx context.Context, entries map[string]Entry, includes []config.IncludeEntry, includeAll bool) error {
+//
+//nolint:nestif // Include logic requires nested checks for key presence and includeAll mode
+func (b *Builder) processIncludes(
+	ctx context.Context,
+	entries map[string]Entry,
+	includes []config.IncludeEntry,
+	includeAll bool,
+) error {
 	for _, inc := range includes {
 		if inc.Key != "" {
 			// Extract specific key

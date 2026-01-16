@@ -1,7 +1,10 @@
+// Package cmd implements the CLI commands for envctl.
+// This file contains the get command for retrieving a single secret value.
 package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/sentiolabs/envctl/internal/aws"
@@ -11,6 +14,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// errKeyNameRequired is returned when a key name is not provided in the secret reference.
+var errKeyNameRequired = errors.New("key name is required (format: secret_name#key)")
+
+// Command flags for get command.
 var (
 	getSecret string
 
@@ -33,11 +40,13 @@ Example:
 	}
 )
 
+// init registers the get command with the root command.
 func init() {
 	getCmd.Flags().StringVar(&getSecret, "secret", "", "get from specific secret (format: secret_name#key)")
 	rootCmd.AddCommand(getCmd)
 }
 
+// runGet retrieves a single secret value by key name from the configured secrets.
 func runGet(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	key := args[0]
@@ -82,10 +91,10 @@ func runGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Find the key
+	// Find the key in the built environment entries
 	for _, e := range entries {
 		if e.Key == key {
-			fmt.Println(e.Value)
+			fmt.Println(e.Value) //nolint:revive,forbidigo // CLI output to stdout
 			return nil
 		}
 	}
@@ -93,6 +102,7 @@ func runGet(cmd *cobra.Command, args []string) error {
 	return fmt.Errorf("key not found: %s", key)
 }
 
+// getFromSecret retrieves a secret value directly from AWS using the secret#key syntax.
 func getFromSecret(ctx context.Context, ref string) error {
 	secretRef, err := config.ParseSecretRef(ref)
 	if err != nil {
@@ -100,7 +110,7 @@ func getFromSecret(ctx context.Context, ref string) error {
 	}
 
 	if secretRef.KeyName == "" {
-		return fmt.Errorf("key name is required (format: secret_name#key)")
+		return errKeyNameRequired
 	}
 
 	// Set up cache for direct secret access
@@ -129,6 +139,6 @@ func getFromSecret(ctx context.Context, ref string) error {
 		return err
 	}
 
-	fmt.Println(value)
+	fmt.Println(value) //nolint:revive,forbidigo // CLI output to stdout
 	return nil
 }

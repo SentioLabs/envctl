@@ -1,3 +1,4 @@
+//nolint:testpackage // Testing internal functions requires same package
 package config
 
 import (
@@ -98,7 +99,7 @@ unknownField: true
 			// Create temp file
 			tmpDir := t.TempDir()
 			configPath := filepath.Join(tmpDir, ConfigFileName)
-			if err := os.WriteFile(configPath, []byte(tt.content), 0644); err != nil {
+			if err := os.WriteFile(configPath, []byte(tt.content), 0o600); err != nil {
 				t.Fatalf("failed to write test config: %v", err)
 			}
 
@@ -128,7 +129,7 @@ func TestFindConfigFrom(t *testing.T) {
 	// Create a directory structure
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "a", "b", "c")
-	if err := os.MkdirAll(subDir, 0755); err != nil {
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
 		t.Fatalf("failed to create dirs: %v", err)
 	}
 
@@ -139,7 +140,7 @@ environments:
   dev:
     secret: test/dev
 `
-	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
 
@@ -213,7 +214,15 @@ func TestGetEnvironment(t *testing.T) {
 }
 
 func containsSubstring(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || findSubstring(s, substr)))
+	if len(s) < len(substr) {
+		return false
+	}
+	if s == substr {
+		return true
+	}
+	return s[:len(substr)] == substr ||
+		s[len(s)-len(substr):] == substr ||
+		findSubstring(s, substr)
 }
 
 func findSubstring(s, substr string) bool {

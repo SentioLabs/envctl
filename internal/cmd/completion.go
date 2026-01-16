@@ -1,3 +1,5 @@
+// Package cmd implements the CLI commands for envctl.
+// This file contains the completion command for generating shell completion scripts.
 package cmd
 
 import (
@@ -6,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// completionCmd generates shell completion scripts for bash and zsh.
+// The generated scripts enable tab completion for envctl commands.
 var completionCmd = &cobra.Command{
 	Use:   "completion [bash|zsh]",
 	Short: "Generate shell completion scripts",

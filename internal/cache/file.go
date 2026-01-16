@@ -6,12 +6,22 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
 )
+
+// File permission constants.
+const (
+	dirPerm  = 0o700
+	filePerm = 0o600
+)
+
+// errCiphertextTooShort is returned when ciphertext is shorter than the nonce size.
+var errCiphertextTooShort = errors.New("ciphertext too short")
 
 // FileBackend stores encrypted cache entries in files.
 type FileBackend struct {
@@ -25,7 +35,7 @@ type FileBackend struct {
 // NewFileBackend creates a new file-based cache backend.
 func NewFileBackend(dir string) (*FileBackend, error) {
 	// Ensure directory exists with restrictive permissions
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
@@ -56,7 +66,7 @@ func (f *FileBackend) Get(key string) (*Entry, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			f.missCount++
-			return nil, nil
+			return nil, nil //nolint:nilnil // nil,nil indicates cache miss (not an error)
 		}
 		return nil, err
 	}
@@ -65,24 +75,24 @@ func (f *FileBackend) Get(key string) (*Entry, error) {
 	plaintext, err := f.decrypt(data)
 	if err != nil {
 		// Corrupted or tampered - delete and return nil
-		os.Remove(path)
+		_ = os.Remove(path)
 		f.missCount++
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil,nil indicates cache miss (not an error)
 	}
 
 	// Unmarshal
 	var entry Entry
 	if err := json.Unmarshal(plaintext, &entry); err != nil {
-		os.Remove(path)
+		_ = os.Remove(path)
 		f.missCount++
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil,nil indicates cache miss (not an error)
 	}
 
 	// Check validity
 	if !entry.IsValid() {
-		os.Remove(path)
+		_ = os.Remove(path)
 		f.missCount++
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil,nil indicates cache miss (not an error)
 	}
 
 	f.hitCount++
@@ -108,7 +118,7 @@ func (f *FileBackend) Set(key string, entry *Entry) error {
 
 	// Write with restrictive permissions
 	path := f.entryPath(key)
-	return os.WriteFile(path, ciphertext, 0600)
+	return os.WriteFile(path, ciphertext, filePerm)
 }
 
 // Delete removes a cache entry.
@@ -142,7 +152,7 @@ func (f *FileBackend) Clear() error {
 			continue
 		}
 		path := filepath.Join(f.dir, entry.Name())
-		os.Remove(path)
+		_ = os.Remove(path)
 	}
 
 	f.hitCount = 0
@@ -226,7 +236,7 @@ func (f *FileBackend) decrypt(ciphertext []byte) ([]byte, error) {
 
 	nonceSize := gcm.NonceSize()
 	if len(ciphertext) < nonceSize {
-		return nil, fmt.Errorf("ciphertext too short")
+		return nil, errCiphertextTooShort
 	}
 
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]

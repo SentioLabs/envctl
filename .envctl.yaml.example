@@ -8,12 +8,22 @@ version: 1
 # Default environment when -e/--env not specified
 default_environment: dev
 
+# ==============================================================================
+# Backend Selection (optional, defaults to "aws")
+# ==============================================================================
+# backend: aws        # Use AWS Secrets Manager (default)
+# backend: 1password  # Use 1Password
+
+# ==============================================================================
+# AWS Secrets Manager Configuration (default)
+# ==============================================================================
 # Environment definitions
 # Each environment points to an AWS Secrets Manager secret
 environments:
   dev:
     secret: myapp/dev
-    # region: us-west-2  # Optional: override AWS region
+    # region: us-west-2   # Optional: override AWS region
+    # profile: my-profile # Optional: use specific AWS profile
 
   staging:
     secret: myapp/staging
@@ -21,9 +31,33 @@ environments:
   prod:
     secret: myapp/prod
 
+# ==============================================================================
+# 1Password Configuration (uncomment to use)
+# ==============================================================================
+# backend: 1password
+#
+# onepassword:
+#   vault: Development  # Default vault name
+#   # account: my-account # Optional: for multi-account setups
+#
+# environments:
+#   dev:
+#     secret: My App Dev Secrets  # 1Password item name
+#   staging:
+#     secret: My App Staging Secrets
+#   prod:
+#     secret: My App Prod Secrets
+
+# ==============================================================================
+# Common Configuration (works with both backends)
+# ==============================================================================
+
+# Optional: Include all keys from primary secret (default: false)
+# include_all: true
+
 # Optional: Additional secrets to include in all environments
 include:
-  # Pull all keys from a shared secret
+  # Pull all keys from a shared secret (requires include_all: true)
   - secret: shared/datadog
 
   # Pull specific key and rename it

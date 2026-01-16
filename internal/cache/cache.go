@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"os"
 	"runtime"
-	"strings"
 	"time"
 )
 
@@ -61,55 +60,23 @@ func (e *Entry) IsValid() bool {
 	return !e.IsExpired() && e.Version == CacheVersion
 }
 
-// CacheKey generates a cache key from region and secret name.
+// Key generates a cache key from region and secret name.
 // Uses SHA256 hash to avoid special characters in filenames/keyring keys.
-func CacheKey(region, secretName string) string {
+func Key(region, secretName string) string {
 	data := region + ":" + secretName
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:16]) // Use first 16 bytes (32 hex chars)
 }
 
 // ShouldCache returns true if caching should be enabled.
-// Returns false if running as root or in CI environment.
+// Returns false if running as root (security risk).
 func ShouldCache() bool {
 	// Don't cache if running as root (security)
 	if os.Geteuid() == 0 {
 		return false
 	}
 
-	// Don't cache in CI environments
-	if IsCI() {
-		return false
-	}
-
 	return true
-}
-
-// IsCI detects if running in a CI environment.
-func IsCI() bool {
-	// Common CI environment variables
-	ciVars := []string{
-		"CI",
-		"CONTINUOUS_INTEGRATION",
-		"GITHUB_ACTIONS",
-		"GITLAB_CI",
-		"CIRCLECI",
-		"TRAVIS",
-		"JENKINS_URL",
-		"BUILDKITE",
-		"DRONE",
-		"TEAMCITY_VERSION",
-		"TF_BUILD", // Azure DevOps
-		"CODEBUILD_BUILD_ID",
-	}
-
-	for _, v := range ciVars {
-		if val := os.Getenv(v); val != "" && strings.ToLower(val) != "false" {
-			return true
-		}
-	}
-
-	return false
 }
 
 // GetCacheDir returns the cache directory path.

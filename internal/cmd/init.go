@@ -1,3 +1,5 @@
+// Package cmd implements the CLI commands for envctl.
+// This file contains the init command for creating starter configuration files.
 package cmd
 
 import (
@@ -9,10 +11,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	// backendOnePassword is the identifier for the 1Password backend.
+	backendOnePassword = "1password"
+	// configFilePerm is the file permission for created config files.
+	configFilePerm = 0o600
+)
+
+// Command flags for init command.
 var (
 	initSecret  string
 	initBackend string
 
+	// initCmd creates a starter .envctl.yaml configuration file.
 	initCmd = &cobra.Command{
 		Use:   "init",
 		Short: "Create a starter configuration file",
@@ -26,12 +37,16 @@ Example:
 	}
 )
 
+// init registers the init command with the root command.
 func init() {
 	initCmd.Flags().StringVar(&initSecret, "secret", "", "primary secret/item name for dev environment")
 	initCmd.Flags().StringVar(&initBackend, "backend", "aws", "secrets backend: aws or 1password")
 	rootCmd.AddCommand(initCmd)
 }
 
+// runInit creates a new .envctl.yaml config file with the specified backend.
+//
+//nolint:revive // CLI output to stdout always succeeds
 func runInit(cmd *cobra.Command, args []string) error {
 	configPath := filepath.Join(".", config.ConfigFileName)
 
@@ -41,27 +56,27 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Validate backend
-	if initBackend != "aws" && initBackend != "1password" {
+	if initBackend != "aws" && initBackend != backendOnePassword {
 		return fmt.Errorf("invalid backend: %s (must be 'aws' or '1password')", initBackend)
 	}
 
 	// Generate content based on backend
 	var content string
-	if initBackend == "1password" {
+	if initBackend == backendOnePassword {
 		content = generateOnePasswordConfig()
 	} else {
 		content = generateAWSConfig()
 	}
 
-	// Write file
-	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+	// Write file with restricted permissions (config may contain sensitive paths)
+	if err := os.WriteFile(configPath, []byte(content), configFilePerm); err != nil {
 		return err
 	}
 
 	fmt.Fprintf(os.Stdout, "Created %s\n", configPath)
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, "Next steps:")
-	if initBackend == "1password" {
+	if initBackend == backendOnePassword {
 		fmt.Fprintln(os.Stdout, "  1. Edit .envctl.yaml with your 1Password item names")
 		fmt.Fprintln(os.Stdout, "  2. Ensure 1Password CLI is installed and configured")
 		fmt.Fprintln(os.Stdout, "  3. Run 'envctl validate' to test connectivity")

@@ -20,31 +20,36 @@ const (
 
 // Backend constants for secret providers.
 const (
-	BackendAWS        = "aws"
+	BackendAWS         = "aws"
 	BackendOnePassword = "1password"
 )
 
 // Config represents the root configuration structure.
+// YAML tags use snake_case for consistency with standard YAML conventions.
+//
+//nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type Config struct {
 	Version            int                     `yaml:"version"`
-	Backend            string                  `yaml:"backend,omitempty"`             // "aws" (default) or "1password"
+	Backend            string                  `yaml:"backend,omitempty"`
 	DefaultApplication string                  `yaml:"default_application,omitempty"`
 	DefaultEnvironment string                  `yaml:"default_environment,omitempty"`
-	IncludeAll         *bool                   `yaml:"include_all,omitempty"` // Include all keys from primary secret (default: false)
+	IncludeAll         *bool                   `yaml:"include_all,omitempty"`
 	Applications       map[string]*Application `yaml:"applications,omitempty"`
 	Environments       map[string]Environment  `yaml:"environments,omitempty"`
 	Include            []IncludeEntry          `yaml:"include,omitempty"`
 	Mapping            map[string]string       `yaml:"mapping,omitempty"`
 	Cache              *CacheConfig            `yaml:"cache,omitempty"`
-	OnePassword        *OnePasswordConfig      `yaml:"onepassword,omitempty"` // 1Password-specific settings
+	OnePassword        *OnePasswordConfig      `yaml:"onepassword,omitempty"`
 }
 
 // Application represents an application with its environment configurations.
+//
+//nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type Application struct {
 	Environments map[string]Environment `yaml:",inline"`
 	Include      []IncludeEntry         `yaml:"include,omitempty"`
 	Mapping      map[string]string      `yaml:"mapping,omitempty"`
-	IncludeAll   *bool                  `yaml:"include_all,omitempty"` // Include all keys from primary secret (default: false)
+	IncludeAll   *bool                  `yaml:"include_all,omitempty"`
 }
 
 // CacheConfig represents cache configuration.
@@ -61,11 +66,13 @@ type OnePasswordConfig struct {
 }
 
 // Environment represents a single environment configuration.
+//
+//nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type Environment struct {
 	Secret     string `yaml:"secret"`
 	Region     string `yaml:"region,omitempty"`
 	Profile    string `yaml:"profile,omitempty"`
-	IncludeAll *bool  `yaml:"include_all,omitempty"` // Include all keys from primary secret (default: false)
+	IncludeAll *bool  `yaml:"include_all,omitempty"`
 }
 
 // IncludeEntry represents an additional secret to include.
@@ -135,6 +142,8 @@ func FindConfigFrom(startPath string) (string, error) {
 }
 
 // Validate checks the config for required fields and valid values.
+//
+//nolint:revive // Config validation requires checking multiple conditions in sequence
 func (c *Config) Validate(path string) error {
 	if c.Version != CurrentVersion {
 		return &errors.ConfigError{
@@ -169,9 +178,11 @@ func (c *Config) Validate(path string) error {
 		}
 		for envName, env := range app.Environments {
 			if env.Secret == "" {
+				msg := "application " + appName + " environment " + envName +
+					" is missing required 'secret' field"
 				return &errors.ConfigError{
 					Path:    path,
-					Message: "application " + appName + " environment " + envName + " is missing required 'secret' field",
+					Message: msg,
 				}
 			}
 		}

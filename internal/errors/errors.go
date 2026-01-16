@@ -1,4 +1,6 @@
 // Package errors provides custom error types for envctl.
+//
+//nolint:revive // Package name "errors" is intentional; imported as "envctlerrors" where needed
 package errors
 
 import (
@@ -100,7 +102,10 @@ type CredentialsError struct {
 }
 
 func (e *CredentialsError) Error() string {
-	return fmt.Sprintf("AWS credentials not found: %s\n  Run 'aws configure' or 'aws sso login' to set up credentials", e.Message)
+	return fmt.Sprintf(
+		"AWS credentials not found: %s\n  Run 'aws configure' or 'aws sso login' to set up credentials",
+		e.Message,
+	)
 }
 
 // SecretRefError is returned when a secret reference is invalid.

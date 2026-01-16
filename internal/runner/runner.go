@@ -3,6 +3,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -35,11 +36,12 @@ func (r *Runner) WithInheritEnv(inherit bool) *Runner {
 // Run executes the command with the configured environment.
 func (r *Runner) Run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("no command specified")
+		return errors.New("no command specified")
 	}
 
 	// Build the command - use exec directly, no shell
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	// G204: args come from user's command line invocation, which is the intended behavior
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...) //nolint:gosec
 
 	// Set up I/O
 	cmd.Stdin = os.Stdin
@@ -62,7 +64,7 @@ func (r *Runner) Run(ctx context.Context, args []string) error {
 	go func() {
 		for sig := range sigChan {
 			if cmd.Process != nil {
-				cmd.Process.Signal(sig)
+				_ = cmd.Process.Signal(sig)
 			}
 		}
 	}()
@@ -88,11 +90,13 @@ func (r *Runner) Run(ctx context.Context, args []string) error {
 
 // buildEnv builds the environment variable list.
 func (r *Runner) buildEnv() []string {
-	var env []string
+	// Pre-allocate with estimated capacity
+	parentEnv := os.Environ()
+	env := make([]string, 0, len(parentEnv)+len(r.env))
 
 	// Start with parent environment if inheriting
 	if r.inheritEnv {
-		env = os.Environ()
+		env = append(env, parentEnv...)
 	}
 
 	// Add our secrets (these override parent env)
@@ -105,9 +109,5 @@ func (r *Runner) buildEnv() []string {
 
 // isExitError checks if an error is an exec.ExitError and extracts it.
 func isExitError(err error, target **exec.ExitError) bool {
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		*target = exitErr
-		return true
-	}
-	return false
+	return errors.As(err, target)
 }

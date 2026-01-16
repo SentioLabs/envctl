@@ -113,17 +113,17 @@ func (m *Manager) BackendName() string {
 // Get retrieves a cached secret.
 func (m *Manager) Get(region, secretName string) (map[string]string, error) {
 	if !m.IsEnabled() {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil,nil indicates cache miss (not an error)
 	}
 
-	key := CacheKey(region, secretName)
+	key := Key(region, secretName)
 	entry, err := m.backend.Get(key)
 	if err != nil {
 		return nil, err
 	}
 
 	if entry == nil {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil,nil indicates cache miss (not an error)
 	}
 
 	return entry.SecretData, nil
@@ -135,7 +135,7 @@ func (m *Manager) Set(region, secretName string, data map[string]string) error {
 		return nil
 	}
 
-	key := CacheKey(region, secretName)
+	key := Key(region, secretName)
 	entry := &Entry{
 		SecretData: data,
 		ExpiresAt:  time.Now().Add(m.ttl),
@@ -152,7 +152,7 @@ func (m *Manager) Delete(region, secretName string) error {
 		return nil
 	}
 
-	key := CacheKey(region, secretName)
+	key := Key(region, secretName)
 	return m.backend.Delete(key)
 }
 

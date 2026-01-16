@@ -1,3 +1,5 @@
+// Package cmd implements the CLI commands for envctl.
+// This file contains the validate command for testing configuration and connectivity.
 package cmd
 
 import (
@@ -10,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// validateCmd tests configuration validity and backend connectivity.
 var validateCmd = &cobra.Command{
 	Use:   "validate",
 	Short: "Validate configuration and AWS connectivity",
@@ -27,10 +30,16 @@ Example:
 	RunE: runValidate,
 }
 
+// init registers the validate command with the root command.
 func init() {
 	rootCmd.AddCommand(validateCmd)
 }
 
+// runValidate executes the validation logic: loads config, resolves environment,
+// creates secrets client, and tests access to all referenced secrets.
+// The fmt.Fprintf/Fprintln calls output status to stdout and always succeed.
+//
+//nolint:gocognit,revive // Validation requires checking multiple conditions; stdout writes always succeed
 func runValidate(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
@@ -71,15 +80,16 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintf(os.Stdout, "✓ Environment: %s\n", selectedEnv)
 
-	// Check include_all setting
+	// Determine include_all mode from flag override or config
 	includeAllOverride := getIncludeAllOverride(cmd)
-	includeAll := false
+	var includeAll bool
 	if includeAllOverride != nil {
 		includeAll = *includeAllOverride
 	} else {
 		includeAll = cfg.ShouldIncludeAll(app, envConfig)
 	}
 
+	//nolint:nestif // Validation messages require nested checks for context
 	if includeAll {
 		fmt.Fprintln(os.Stdout, "✓ Mode: include_all (all keys from primary secret)")
 	} else {
@@ -130,16 +140,16 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	totalKeys += len(secrets)
 
 	// Test global include secrets
-	totalKeys += validateIncludes(client, ctx, cfg.Include, "global")
+	totalKeys += validateIncludes(ctx, client, cfg.Include, "global")
 
 	// Test app-level include secrets
 	if app != nil && len(app.Include) > 0 {
-		totalKeys += validateIncludes(client, ctx, app.Include, "app")
+		totalKeys += validateIncludes(ctx, client, app.Include, "app")
 	}
 
 	// Test global mapping references
 	if len(cfg.Mapping) > 0 {
-		if err := validateMapping(client, ctx, cfg.Mapping, "global"); err != nil {
+		if err := validateMapping(ctx, client, cfg.Mapping, "global"); err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stdout, "✓ Global mapping: %d entries resolved\n", len(cfg.Mapping))
@@ -147,7 +157,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// Test app-level mapping references
 	if app != nil && len(app.Mapping) > 0 {
-		if err := validateMapping(client, ctx, app.Mapping, "app"); err != nil {
+		if err := validateMapping(ctx, client, app.Mapping, "app"); err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stdout, "✓ App mapping: %d entries resolved\n", len(app.Mapping))
@@ -160,7 +170,14 @@ func runValidate(cmd *cobra.Command, args []string) error {
 }
 
 // validateIncludes tests include secrets and returns count of keys.
-func validateIncludes(client secrets.Client, ctx context.Context, includes []config.IncludeEntry, scope string) int {
+//
+//nolint:revive // CLI output to stdout always succeeds
+func validateIncludes(
+	ctx context.Context,
+	client secrets.Client,
+	includes []config.IncludeEntry,
+	scope string,
+) int {
 	totalKeys := 0
 	for _, inc := range includes {
 		if inc.Key != "" {
@@ -187,7 +204,12 @@ func validateIncludes(client secrets.Client, ctx context.Context, includes []con
 }
 
 // validateMapping tests mapping entries.
-func validateMapping(client secrets.Client, ctx context.Context, mapping map[string]string, scope string) error {
+func validateMapping(
+	ctx context.Context,
+	client secrets.Client,
+	mapping map[string]string,
+	scope string,
+) error {
 	for envVar, ref := range mapping {
 		secretRef, err := config.ParseSecretRef(ref)
 		if err != nil {

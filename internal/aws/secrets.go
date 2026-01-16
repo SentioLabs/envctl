@@ -27,11 +27,11 @@ const (
 
 // SecretsClient provides access to AWS Secrets Manager.
 type SecretsClient struct {
-	client   *secretsmanager.Client
-	region   string
-	cache    *cache.Manager
-	noCache  bool
-	refresh  bool
+	client  *secretsmanager.Client
+	region  string
+	cache   *cache.Manager
+	noCache bool
+	refresh bool
 }
 
 // ClientOptions configures the secrets client.
@@ -92,7 +92,7 @@ func (c *SecretsClient) GetSecret(ctx context.Context, secretName string) (map[s
 
 	// Store in cache
 	if c.cache != nil && !c.noCache {
-		c.cache.Set(c.region, secretName, secrets)
+		_ = c.cache.Set(c.region, secretName, secrets)
 	}
 
 	return secrets, nil

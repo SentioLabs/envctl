@@ -43,14 +43,18 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&noCache, "no-cache", false, "bypass secret cache")
 	rootCmd.PersistentFlags().BoolVar(&refresh, "refresh", false, "force refresh secrets and update cache")
-	rootCmd.PersistentFlags().BoolVar(&includeAll, "include-all", false, "include all keys from primary secret (override config)")
+	rootCmd.PersistentFlags().BoolVar(
+		&includeAll, "include-all", false, "include all keys from primary secret (override config)",
+	)
 
 	// Register custom completions
-	rootCmd.RegisterFlagCompletionFunc("app", completeApplicationNames)
-	rootCmd.RegisterFlagCompletionFunc("env", completeEnvironmentNames)
+	_ = rootCmd.RegisterFlagCompletionFunc("app", completeApplicationNames)
+	_ = rootCmd.RegisterFlagCompletionFunc("env", completeEnvironmentNames)
 }
 
 // Execute runs the root command.
+//
+//nolint:revive // CLI output to stderr always succeeds
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -59,6 +63,8 @@ func Execute() {
 }
 
 // verboseLog prints a message if verbose mode is enabled.
+//
+//nolint:revive // CLI output to stderr always succeeds
 func verboseLog(format string, args ...any) {
 	if verbose {
 		fmt.Fprintf(os.Stderr, "[envctl] "+format+"\n", args...)
@@ -113,7 +119,11 @@ func createSecretsClient(ctx context.Context, cfg *config.Config, region, profil
 }
 
 // completeApplicationNames provides completion for application names from config.
-func completeApplicationNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func completeApplicationNames(
+	cmd *cobra.Command,
+	args []string,
+	toComplete string,
+) ([]string, cobra.ShellCompDirective) {
 	cfg := loadConfigForCompletion()
 	if cfg == nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -129,7 +139,11 @@ func completeApplicationNames(cmd *cobra.Command, args []string, toComplete stri
 }
 
 // completeEnvironmentNames provides completion for environment names from config.
-func completeEnvironmentNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func completeEnvironmentNames(
+	cmd *cobra.Command,
+	args []string,
+	toComplete string,
+) ([]string, cobra.ShellCompDirective) {
 	cfg := loadConfigForCompletion()
 	if cfg == nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -137,14 +151,16 @@ func completeEnvironmentNames(cmd *cobra.Command, args []string, toComplete stri
 
 	envs := make([]string, 0)
 
-	// If using applications and --app is set, get envs from that app
-	if cfg.HasApplications() && appName != "" {
+	// Get environment names based on configuration mode
+	switch {
+	case cfg.HasApplications() && appName != "":
+		// App specified - get envs from that app
 		if app, ok := cfg.Applications[appName]; ok {
 			for name := range app.Environments {
 				envs = append(envs, name)
 			}
 		}
-	} else if cfg.HasApplications() {
+	case cfg.HasApplications():
 		// Collect all unique env names from all applications
 		envSet := make(map[string]struct{})
 		for _, app := range cfg.Applications {
@@ -155,7 +171,7 @@ func completeEnvironmentNames(cmd *cobra.Command, args []string, toComplete stri
 		for name := range envSet {
 			envs = append(envs, name)
 		}
-	} else {
+	default:
 		// Legacy mode - use global environments
 		for name := range cfg.Environments {
 			envs = append(envs, name)

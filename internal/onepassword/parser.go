@@ -1,9 +1,21 @@
 package onepassword
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
+
+// Reference part counts.
+const (
+	partsItem            = 1 // Just item name
+	partsVaultItem       = 2 // vault/item
+	partsVaultItemField  = 3 // vault/item/field
+	partsVaultItemSecFld = 4 // vault/item/section/field
+)
+
+// errEmptyReference is returned when the reference string is empty.
+var errEmptyReference = errors.New("empty reference")
 
 // Reference represents a parsed op:// secret reference.
 // Format: op://vault/item[/section]/field
@@ -29,16 +41,16 @@ func ParseReference(ref string) (*Reference, error) {
 	parts := strings.Split(ref, "/")
 
 	switch len(parts) {
-	case 1:
+	case partsItem:
 		// Just item name, no vault specified
 		if parts[0] == "" {
-			return nil, fmt.Errorf("empty reference")
+			return nil, errEmptyReference
 		}
 		return &Reference{
 			Item: parts[0],
 		}, nil
 
-	case 2:
+	case partsVaultItem:
 		// vault/item
 		if parts[0] == "" || parts[1] == "" {
 			return nil, fmt.Errorf("invalid reference format: %s", ref)
@@ -48,7 +60,7 @@ func ParseReference(ref string) (*Reference, error) {
 			Item:  parts[1],
 		}, nil
 
-	case 3:
+	case partsVaultItemField:
 		// vault/item/field
 		if parts[0] == "" || parts[1] == "" || parts[2] == "" {
 			return nil, fmt.Errorf("invalid reference format: %s", ref)
@@ -59,7 +71,7 @@ func ParseReference(ref string) (*Reference, error) {
 			Field: parts[2],
 		}, nil
 
-	case 4:
+	case partsVaultItemSecFld:
 		// vault/item/section/field
 		if parts[0] == "" || parts[1] == "" || parts[2] == "" || parts[3] == "" {
 			return nil, fmt.Errorf("invalid reference format: %s", ref)
@@ -72,11 +84,15 @@ func ParseReference(ref string) (*Reference, error) {
 		}, nil
 
 	default:
-		return nil, fmt.Errorf("invalid reference format: %s (expected vault/item[/field] or op://vault/item[/field])", ref)
+		return nil, fmt.Errorf(
+			"invalid reference format: %s (expected vault/item[/field] or op://vault/item[/field])", ref)
 	}
 }
 
 // String returns the canonical op:// format for this reference.
+// The strings.Builder Write methods never return errors, so we ignore them.
+//
+//nolint:revive // strings.Builder Write methods always return nil error
 func (r *Reference) String() string {
 	var sb strings.Builder
 	sb.WriteString("op://")

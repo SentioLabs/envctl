@@ -29,7 +29,6 @@ A lightweight CLI tool that enables developers to use a secrets manager as the s
   - [How It Works](#how-it-works)
   - [Security](#security)
   - [Cache Control](#cache-control)
-  - [CI/CD Environments](#cicd-environments)
 - [AWS Setup](#aws-setup)
   - [Authentication](#authentication)
   - [Required IAM Permissions](#required-iam-permissions)
@@ -532,7 +531,7 @@ Cached secrets are stored securely:
 - **Keyring backend**: Uses OS-level credential storage (macOS Keychain, Linux secret-service)
 - **File backend**: AES-256-GCM encryption with machine-derived keys
 - **No plaintext**: Secrets are never stored in plaintext on disk
-- **Auto-disabled**: Caching is automatically disabled in CI environments and when running as root
+- **Auto-disabled**: Caching is automatically disabled when running as root
 
 ### Cache Control
 
@@ -549,17 +548,6 @@ envctl cache status
 # Clear all cached secrets
 envctl cache clear
 ```
-
-### CI/CD Environments
-
-Caching is automatically disabled when these environment variables are detected:
-- `CI`
-- `GITHUB_ACTIONS`
-- `GITLAB_CI`
-- `JENKINS_URL`
-- `CIRCLECI`
-- `TRAVIS`
-- `BUILDKITE`
 
 ## AWS Setup
 

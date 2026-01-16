@@ -3,6 +3,8 @@ package version
 
 import "runtime/debug"
 
+const unknownValue = "unknown"
+
 // These variables are set at build time via -ldflags.
 // If not set, we attempt to read from Go module info (for go install @version).
 var (
@@ -10,35 +12,54 @@ var (
 	Version = "dev"
 
 	// GitCommit is the git commit SHA
-	GitCommit = "unknown"
+	GitCommit = unknownValue
 
 	// BuildDate is the build timestamp in RFC3339 format
-	BuildDate = "unknown"
+	BuildDate = unknownValue
 )
 
 func init() {
-	// If ldflags weren't set, try to read from Go module build info.
-	// This works when installed via: go install ...@v0.1.0
-	if Version == "dev" {
-		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-			Version = info.Main.Version
-		}
+	initVersionFromBuildInfo()
+	initVCSInfoFromBuildInfo()
+}
+
+// initVersionFromBuildInfo attempts to set Version from Go module build info.
+// This works when installed via: go install ...@v0.1.0
+func initVersionFromBuildInfo() {
+	if Version != "dev" {
+		return
 	}
 
-	// Try to get VCS info from build settings
-	if GitCommit == "unknown" || BuildDate == "unknown" {
-		if info, ok := debug.ReadBuildInfo(); ok {
-			for _, setting := range info.Settings {
-				switch setting.Key {
-				case "vcs.revision":
-					if GitCommit == "unknown" && len(setting.Value) >= 7 {
-						GitCommit = setting.Value[:7]
-					}
-				case "vcs.time":
-					if BuildDate == "unknown" {
-						BuildDate = setting.Value
-					}
-				}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+
+	if info.Main.Version != "" && info.Main.Version != "(devel)" {
+		Version = info.Main.Version
+	}
+}
+
+// initVCSInfoFromBuildInfo attempts to set GitCommit and BuildDate from VCS build settings.
+func initVCSInfoFromBuildInfo() {
+	if GitCommit != unknownValue && BuildDate != unknownValue {
+		return
+	}
+
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			if GitCommit == unknownValue && len(setting.Value) >= 7 {
+				GitCommit = setting.Value[:7]
+			}
+		case "vcs.time":
+			if BuildDate == unknownValue {
+				BuildDate = setting.Value
 			}
 		}
 	}

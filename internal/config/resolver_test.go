@@ -1,3 +1,4 @@
+//nolint:testpackage // Testing internal functions requires same package
 package config
 
 import "testing"
