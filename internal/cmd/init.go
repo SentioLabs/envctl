@@ -10,7 +10,8 @@ import (
 )
 
 var (
-	initSecret string
+	initSecret  string
+	initBackend string
 
 	initCmd = &cobra.Command{
 		Use:   "init",
@@ -19,13 +20,15 @@ var (
 
 Example:
   envctl init
-  envctl init --secret myapp/dev`,
+  envctl init --secret myapp/dev
+  envctl init --backend 1password --secret "My App Secrets"`,
 		RunE: runInit,
 	}
 )
 
 func init() {
-	initCmd.Flags().StringVar(&initSecret, "secret", "", "primary secret name for dev environment")
+	initCmd.Flags().StringVar(&initSecret, "secret", "", "primary secret/item name for dev environment")
+	initCmd.Flags().StringVar(&initBackend, "backend", "aws", "secrets backend: aws or 1password")
 	rootCmd.AddCommand(initCmd)
 }
 
@@ -37,10 +40,45 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("config file already exists: %s", configPath)
 	}
 
-	// Generate content
+	// Validate backend
+	if initBackend != "aws" && initBackend != "1password" {
+		return fmt.Errorf("invalid backend: %s (must be 'aws' or '1password')", initBackend)
+	}
+
+	// Generate content based on backend
 	var content string
+	if initBackend == "1password" {
+		content = generateOnePasswordConfig()
+	} else {
+		content = generateAWSConfig()
+	}
+
+	// Write file
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stdout, "Created %s\n", configPath)
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout, "Next steps:")
+	if initBackend == "1password" {
+		fmt.Fprintln(os.Stdout, "  1. Edit .envctl.yaml with your 1Password item names")
+		fmt.Fprintln(os.Stdout, "  2. Ensure 1Password CLI is installed and configured")
+		fmt.Fprintln(os.Stdout, "  3. Run 'envctl validate' to test connectivity")
+	} else {
+		fmt.Fprintln(os.Stdout, "  1. Edit .envctl.yaml with your AWS secret names")
+		fmt.Fprintln(os.Stdout, "  2. Run 'envctl validate' to test connectivity")
+	}
+	fmt.Fprintln(os.Stdout, "  4. Run 'envctl run -- your-command' to start development")
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout, "Don't forget to add .env to your .gitignore!")
+
+	return nil
+}
+
+func generateAWSConfig() string {
 	if initSecret != "" {
-		content = fmt.Sprintf(`# envctl configuration
+		return fmt.Sprintf(`# envctl configuration
 # See: https://github.com/sentiolabs/envctl
 
 version: 1
@@ -68,8 +106,9 @@ environments:
 # mapping:
 #   DATABASE_URL: %s#database_url
 `, initSecret, initSecret, initSecret, initSecret)
-	} else {
-		content = `# envctl configuration
+	}
+
+	return `# envctl configuration
 # See: https://github.com/sentiolabs/envctl
 
 version: 1
@@ -80,8 +119,9 @@ default_environment: dev
 # Environment definitions
 environments:
   dev:
-    secret: your-app/dev  # Replace with your secret name
+    secret: your-app/dev  # Replace with your AWS secret name
     # region: us-west-2   # Optional: override AWS region
+    # profile: my-profile # Optional: use specific AWS profile
   # staging:
   #   secret: your-app/staging
   # prod:
@@ -102,21 +142,88 @@ environments:
 #   DATABASE_URL: your-app/dev#database_url
 #   REDIS_URL: your-app/dev#redis_url
 `
+}
+
+func generateOnePasswordConfig() string {
+	if initSecret != "" {
+		return fmt.Sprintf(`# envctl configuration - 1Password
+# See: https://github.com/sentiolabs/envctl
+
+version: 1
+
+# Use 1Password as the secrets backend
+backend: 1password
+
+# 1Password settings
+onepassword:
+  vault: Development  # Default vault (change to your vault name)
+  # account: my-account # Optional: account shorthand for multi-account setups
+
+# Default environment when -e/--env not specified
+default_environment: dev
+
+# Environment definitions
+# For 1Password, 'secret' is the item name in your vault
+environments:
+  dev:
+    secret: %s
+  # staging:
+  #   secret: %s Staging
+  # prod:
+  #   secret: %s Prod
+
+# Optional: Additional 1Password items to include
+# include:
+#   - secret: Shared Secrets
+#   - secret: API Keys
+#     key: stripe_key
+#     as: STRIPE_SECRET_KEY
+
+# Optional: Explicit env var mappings
+# mapping:
+#   DATABASE_URL: Database Credentials#connection_string
+`, initSecret, initSecret, initSecret)
 	}
 
-	// Write file
-	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
-		return err
-	}
+	return `# envctl configuration - 1Password
+# See: https://github.com/sentiolabs/envctl
 
-	fmt.Fprintf(os.Stdout, "Created %s\n", configPath)
-	fmt.Fprintln(os.Stdout)
-	fmt.Fprintln(os.Stdout, "Next steps:")
-	fmt.Fprintln(os.Stdout, "  1. Edit .envctl.yaml with your secret names")
-	fmt.Fprintln(os.Stdout, "  2. Run 'envctl validate' to test connectivity")
-	fmt.Fprintln(os.Stdout, "  3. Run 'envctl run -- your-command' to start development")
-	fmt.Fprintln(os.Stdout)
-	fmt.Fprintln(os.Stdout, "Don't forget to add .env to your .gitignore!")
+version: 1
 
-	return nil
+# Use 1Password as the secrets backend
+backend: 1password
+
+# 1Password settings
+onepassword:
+  vault: Development  # Default vault (change to your vault name)
+  # account: my-account # Optional: account shorthand for multi-account setups
+
+# Default environment when -e/--env not specified
+default_environment: dev
+
+# Environment definitions
+# For 1Password, 'secret' is the item name in your vault
+environments:
+  dev:
+    secret: My App Dev  # Replace with your 1Password item name
+  # staging:
+  #   secret: My App Staging
+  # prod:
+  #   secret: My App Prod
+
+# Optional: Additional 1Password items to include
+# include:
+#   # Pull all fields from a shared item
+#   - secret: Shared Secrets
+#
+#   # Pull specific field and rename it
+#   - secret: API Keys
+#     key: stripe_key
+#     as: STRIPE_SECRET_KEY
+
+# Optional: Explicit env var mappings
+# mapping:
+#   DATABASE_URL: Database Credentials#connection_string
+#   REDIS_URL: Redis Config#url
+`
 }

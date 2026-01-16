@@ -7,9 +7,9 @@ import (
 	"os"
 	"sort"
 
-	"github.com/sentiolabs/envctl/internal/aws"
 	"github.com/sentiolabs/envctl/internal/cache"
 	"github.com/sentiolabs/envctl/internal/config"
+	"github.com/sentiolabs/envctl/internal/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -65,12 +65,13 @@ func verboseLog(format string, args ...any) {
 	}
 }
 
-// createSecretsClient creates an AWS Secrets Manager client with caching support.
-func createSecretsClient(ctx context.Context, cfg *config.Config, region, profile string) (*aws.SecretsClient, error) {
+// createSecretsClient creates a secrets client based on the configured backend.
+func createSecretsClient(ctx context.Context, cfg *config.Config, region, profile string) (secrets.Client, error) {
 	var cacheManager *cache.Manager
 
 	// Set up cache if enabled (and not bypassed)
-	if cfg.CacheEnabled() && !noCache {
+	// Note: cache only applies to AWS backend currently
+	if cfg.CacheEnabled() && !noCache && !cfg.IsOnePassword() {
 		cacheOpts := cache.Options{
 			Enabled: true,
 			TTL:     cfg.CacheTTL(),
@@ -94,11 +95,15 @@ func createSecretsClient(ctx context.Context, cfg *config.Config, region, profil
 		}
 	}
 
-	if profile != "" {
+	backend := cfg.GetBackend()
+	verboseLog("Using secrets backend: %s", backend)
+
+	if backend == config.BackendAWS && profile != "" {
 		verboseLog("Using AWS profile: %s", profile)
 	}
 
-	return aws.NewSecretsClientWithOptions(ctx, aws.ClientOptions{
+	return secrets.NewClient(ctx, secrets.Options{
+		Config:  cfg,
 		Region:  region,
 		Profile: profile,
 		Cache:   cacheManager,

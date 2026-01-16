@@ -206,6 +206,11 @@ func isAccessDenied(err error) bool {
 	return false
 }
 
+// Name returns the backend name.
+func (c *SecretsClient) Name() string {
+	return "aws"
+}
+
 // mapAWSError converts AWS errors to user-friendly error types.
 func mapAWSError(secretName string, err error) error {
 	var notFound *types.ResourceNotFoundException

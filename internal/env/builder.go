@@ -4,9 +4,9 @@ package env
 import (
 	"context"
 
-	"github.com/sentiolabs/envctl/internal/aws"
 	"github.com/sentiolabs/envctl/internal/config"
 	"github.com/sentiolabs/envctl/internal/errors"
+	"github.com/sentiolabs/envctl/internal/secrets"
 )
 
 // Entry represents a resolved environment variable with its source.
@@ -18,7 +18,7 @@ type Entry struct {
 
 // Builder builds environment variables from configuration.
 type Builder struct {
-	secrets    *aws.SecretsClient
+	secrets    secrets.Client
 	config     *config.Config
 	appName    string
 	envName    string
@@ -29,9 +29,9 @@ type Builder struct {
 
 // NewBuilder creates a new environment builder.
 // appName can be empty for legacy (non-application) configs.
-func NewBuilder(secrets *aws.SecretsClient, cfg *config.Config, appName, envName string) *Builder {
+func NewBuilder(client secrets.Client, cfg *config.Config, appName, envName string) *Builder {
 	return &Builder{
-		secrets: secrets,
+		secrets: client,
 		config:  cfg,
 		appName: appName,
 		envName: envName,

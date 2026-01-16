@@ -18,17 +18,25 @@ const (
 	CurrentVersion = 1
 )
 
+// Backend constants for secret providers.
+const (
+	BackendAWS        = "aws"
+	BackendOnePassword = "1password"
+)
+
 // Config represents the root configuration structure.
 type Config struct {
-	Version            int                       `yaml:"version"`
-	DefaultApplication string                    `yaml:"default_application,omitempty"`
-	DefaultEnvironment string                    `yaml:"default_environment,omitempty"`
-	IncludeAll         *bool                     `yaml:"include_all,omitempty"` // Include all keys from primary secret (default: false)
-	Applications       map[string]*Application   `yaml:"applications,omitempty"`
-	Environments       map[string]Environment    `yaml:"environments,omitempty"`
-	Include            []IncludeEntry            `yaml:"include,omitempty"`
-	Mapping            map[string]string         `yaml:"mapping,omitempty"`
-	Cache              *CacheConfig              `yaml:"cache,omitempty"`
+	Version            int                     `yaml:"version"`
+	Backend            string                  `yaml:"backend,omitempty"`             // "aws" (default) or "1password"
+	DefaultApplication string                  `yaml:"default_application,omitempty"`
+	DefaultEnvironment string                  `yaml:"default_environment,omitempty"`
+	IncludeAll         *bool                   `yaml:"include_all,omitempty"` // Include all keys from primary secret (default: false)
+	Applications       map[string]*Application `yaml:"applications,omitempty"`
+	Environments       map[string]Environment  `yaml:"environments,omitempty"`
+	Include            []IncludeEntry          `yaml:"include,omitempty"`
+	Mapping            map[string]string       `yaml:"mapping,omitempty"`
+	Cache              *CacheConfig            `yaml:"cache,omitempty"`
+	OnePassword        *OnePasswordConfig      `yaml:"onepassword,omitempty"` // 1Password-specific settings
 }
 
 // Application represents an application with its environment configurations.
@@ -44,6 +52,12 @@ type CacheConfig struct {
 	Enabled *bool  `yaml:"enabled,omitempty"` // Pointer to distinguish unset from false
 	TTL     string `yaml:"ttl,omitempty"`     // Duration string like "15m", "1h"
 	Backend string `yaml:"backend,omitempty"` // "auto", "keyring", "file", "none"
+}
+
+// OnePasswordConfig represents 1Password-specific configuration.
+type OnePasswordConfig struct {
+	Vault   string `yaml:"vault,omitempty"`   // Default vault name or ID
+	Account string `yaml:"account,omitempty"` // Account shorthand (optional, for multi-account setups)
 }
 
 // Environment represents a single environment configuration.
@@ -126,6 +140,14 @@ func (c *Config) Validate(path string) error {
 		return &errors.ConfigError{
 			Path:    path,
 			Message: "unsupported config version (expected version: 1)",
+		}
+	}
+
+	// Validate backend if specified
+	if c.Backend != "" && c.Backend != BackendAWS && c.Backend != BackendOnePassword {
+		return &errors.ConfigError{
+			Path:    path,
+			Message: "invalid backend: " + c.Backend + " (must be 'aws' or '1password')",
 		}
 	}
 
@@ -294,6 +316,20 @@ func (c *Config) CacheBackend() string {
 		return ""
 	}
 	return c.Cache.Backend
+}
+
+// GetBackend returns the configured backend.
+// Returns "aws" if not set.
+func (c *Config) GetBackend() string {
+	if c.Backend == "" {
+		return BackendAWS
+	}
+	return c.Backend
+}
+
+// IsOnePassword returns true if using 1Password backend.
+func (c *Config) IsOnePassword() bool {
+	return c.GetBackend() == BackendOnePassword
 }
 
 // ShouldIncludeAll resolves include_all setting with precedence: env > app > global.

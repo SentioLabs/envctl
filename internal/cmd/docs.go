@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	validTopics = []string{"config", "examples", "k8s", "patterns"}
+	validTopics = []string{"config", "examples", "k8s", "patterns", "1password"}
 
 	docsCmd = &cobra.Command{
 		Use:   "docs [topic]",
@@ -17,10 +17,11 @@ var (
 		Long: `Display documentation about envctl configuration and usage.
 
 Available topics:
-  config    Configuration file format (.envctl.yaml)
-  examples  Example configurations for common patterns
-  k8s       Converting Kubernetes secrets to envctl
-  patterns  Common integration patterns (Docker, direnv, etc.)
+  config      Configuration file format (.envctl.yaml)
+  examples    Example configurations for common patterns
+  k8s         Converting Kubernetes secrets to envctl
+  patterns    Common integration patterns (Docker, direnv, etc.)
+  1password   Using 1Password as a secrets backend
 
 Run 'envctl docs <topic>' for detailed information on a topic.`,
 		Args:              cobra.MaximumNArgs(1),
@@ -51,8 +52,10 @@ func runDocs(cmd *cobra.Command, args []string) error {
 		content = docs.K8s
 	case "patterns":
 		content = docs.Patterns
+	case "1password":
+		content = docs.OnePassword
 	default:
-		return fmt.Errorf("unknown topic: %s\nAvailable topics: config, examples, k8s, patterns", topic)
+		return fmt.Errorf("unknown topic: %s\nAvailable topics: config, examples, k8s, patterns, 1password", topic)
 	}
 
 	fmt.Fprint(os.Stdout, content)

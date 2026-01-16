@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sentiolabs/envctl/internal/aws"
 	"github.com/sentiolabs/envctl/internal/config"
+	"github.com/sentiolabs/envctl/internal/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -113,12 +113,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create AWS client with caching
+	// Create secrets client
 	client, err := createSecretsClient(ctx, cfg, envConfig.Region, envConfig.Profile)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stdout, "✓ AWS credentials: valid")
+	fmt.Fprintf(os.Stdout, "✓ Backend: %s (authenticated)\n", client.Name())
 
 	// Test primary secret
 	totalKeys := 0
@@ -160,7 +160,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 }
 
 // validateIncludes tests include secrets and returns count of keys.
-func validateIncludes(client *aws.SecretsClient, ctx context.Context, includes []config.IncludeEntry, scope string) int {
+func validateIncludes(client secrets.Client, ctx context.Context, includes []config.IncludeEntry, scope string) int {
 	totalKeys := 0
 	for _, inc := range includes {
 		if inc.Key != "" {
@@ -187,7 +187,7 @@ func validateIncludes(client *aws.SecretsClient, ctx context.Context, includes [
 }
 
 // validateMapping tests mapping entries.
-func validateMapping(client *aws.SecretsClient, ctx context.Context, mapping map[string]string, scope string) error {
+func validateMapping(client secrets.Client, ctx context.Context, mapping map[string]string, scope string) error {
 	for envVar, ref := range mapping {
 		secretRef, err := config.ParseSecretRef(ref)
 		if err != nil {

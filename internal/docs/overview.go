@@ -3,16 +3,18 @@ package docs
 const Overview = `envctl Documentation
 ====================
 
-envctl enables developers to use AWS Secrets Manager as the single source
-of truth for application secrets during local development.
+envctl enables developers to use a secrets manager (AWS Secrets Manager or
+1Password) as the single source of truth for application secrets during
+local development.
 
 Available Topics
 ----------------
 
-  config    Configuration file format (.envctl.yaml)
-  examples  Example configurations for common patterns
-  k8s       Converting Kubernetes secrets to envctl
-  patterns  Common integration patterns (Docker, direnv, etc.)
+  config      Configuration file format (.envctl.yaml)
+  examples    Example configurations for common patterns
+  k8s         Converting Kubernetes secrets to envctl
+  patterns    Common integration patterns (Docker, direnv, etc.)
+  1password   Using 1Password as a secrets backend
 
 Run 'envctl docs <topic>' for detailed information on a topic.
 

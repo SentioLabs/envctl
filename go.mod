@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.41.1
 	github.com/aws/smithy-go v1.24.0
 	github.com/spf13/cobra v1.10.2
+	github.com/zalando/go-keyring v0.2.6
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -28,6 +29,5 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
-	github.com/zalando/go-keyring v0.2.6 // indirect
 	golang.org/x/sys v0.26.0 // indirect
 )
