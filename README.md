@@ -2,6 +2,52 @@
 
 A lightweight CLI tool that enables developers to use a secrets manager as the single source of truth for application secrets during local development.
 
+## Table of Contents
+
+- [Supported Backends](#supported-backends)
+- [Features](#features)
+- [Installation](#installation)
+  - [From Source](#from-source)
+  - [Build Locally](#build-locally)
+  - [Shell Completions](#shell-completions)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+  - [Direct Execution](#direct-execution-preferred)
+  - [Docker Compose Workflow](#docker-compose-workflow)
+  - [Shell Integration](#shell-integration)
+  - [Inspect Secrets](#inspect-secrets)
+- [Configuration](#configuration)
+  - [Basic Configuration](#basic-configuration)
+  - [Advanced Configuration](#advanced-configuration)
+  - [Multi-Application Configuration](#multi-application-configuration)
+  - [Mappings-Only Mode](#mappings-only-mode-default)
+  - [Configuration Precedence](#configuration-precedence)
+  - [AWS Secret Format](#aws-secret-format)
+  - [Secret Reference Syntax](#secret-reference-syntax)
+  - [Cache Configuration](#cache-configuration)
+- [Caching](#caching)
+  - [How It Works](#how-it-works)
+  - [Security](#security)
+  - [Cache Control](#cache-control)
+  - [CI/CD Environments](#cicd-environments)
+- [AWS Setup](#aws-setup)
+  - [Authentication](#authentication)
+  - [Required IAM Permissions](#required-iam-permissions)
+  - [Creating Secrets in AWS](#creating-secrets-in-aws)
+- [1Password Setup](#1password-setup)
+  - [Prerequisites](#prerequisites)
+  - [Configuration](#configuration-1)
+  - [Field Mapping](#how-1password-items-map-to-environment-variables)
+  - [Creating Items](#creating-items-for-envctl)
+  - [Authentication](#authentication-1)
+- [CLI Reference](#cli-reference)
+  - [Global Flags](#global-flags)
+  - [Commands](#commands)
+- [Examples](#examples)
+- [Security](#security-1)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+
 ## Supported Backends
 
 | Backend | Authentication | Best For |
