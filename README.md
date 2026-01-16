@@ -881,7 +881,6 @@ envctl is for **local development only**. In CI/CD and production:
 - **File permission warnings** - Alerts if `.env` files have insecure permissions
 - **Gitignore checks** - Warns if `.env` is not in `.gitignore`
 - **Encrypted cache** - Cached secrets use AES-256-GCM encryption or OS keyring
-- **CI-aware** - Caching automatically disabled in CI environments
 
 ## Troubleshooting
 
