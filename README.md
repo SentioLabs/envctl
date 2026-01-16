@@ -89,6 +89,7 @@ Output:
 ```
 ✓ Config file: .envctl.yaml
 ✓ Environment: dev
+✓ Mode: mappings-only (explicit keys only)
 ✓ AWS credentials: valid
 ✓ Secret 'myapp/dev': accessible (5 keys)
 
@@ -239,9 +240,6 @@ environments:
 
 # Include additional secrets (merged into all environments)
 include:
-  # Pull all keys from a shared secret
-  - secret: shared/datadog
-
   # Pull specific key and rename it
   - secret: shared/stripe
     key: test_key
@@ -250,6 +248,9 @@ include:
   # Pull specific key, keep original name
   - secret: shared/sendgrid
     key: API_KEY
+
+  # Pull all keys from a shared secret (requires include_all: true)
+  - secret: shared/datadog
 
 # Explicit mappings (highest precedence)
 mapping:
@@ -322,10 +323,41 @@ When using applications:
 - App-level `include` and `mapping` override globals
 - Both `--app/-a` and `--env/-e` flags support shell completion
 
+### Mappings-Only Mode (Default)
+
+By default, envctl only injects explicitly mapped keys. This is recommended because AWS secrets often use `snake_case` keys (e.g., `database_url`) while applications expect `SCREAMING_SNAKE_CASE` environment variables (e.g., `DATABASE_URL`).
+
+To include all keys from the primary secret, set `include_all: true`:
+
+```yaml
+version: 1
+default_environment: dev
+include_all: true  # Global setting
+
+environments:
+  dev:
+    secret: myapp/dev
+    include_all: true  # Or per-environment
+```
+
+You can also use the `--include-all` CLI flag to override at runtime:
+
+```bash
+envctl run --include-all -- make dev
+```
+
 ### Configuration Precedence
 
 When resolving environment variables, sources are applied in this order (later wins):
 
+**Default (mappings-only mode):**
+1. Global `include` entries with specific keys
+2. App-level `include` entries with specific keys
+3. Global `mapping` entries
+4. App-level `mapping` entries
+5. Command-line overrides (`--set KEY=VALUE`)
+
+**With `include_all: true`:**
 1. Primary `secret` for the environment (all keys)
 2. Global `include` entries (in order specified)
 3. App-level `include` entries (in order specified)
@@ -526,6 +558,7 @@ aws secretsmanager put-secret-value \
 | `--verbose` | `-v` | Enable verbose output |
 | `--no-cache` | | Bypass secret cache for this request |
 | `--refresh` | | Force refresh secrets and update cache |
+| `--include-all` | | Include all keys from primary secret (override config) |
 
 ### Commands
 

@@ -27,6 +27,7 @@ Use when you have one application or want a flat structure.
       secret: myapp/dev           # AWS secret name (required)
       region: us-east-1           # Optional, defaults to AWS_REGION
       profile: mycompany-dev      # Optional, defaults to AWS_PROFILE
+      include_all: true           # Optional, include all keys from primary secret
     staging:
       secret: myapp/staging
     prod:
@@ -64,16 +65,34 @@ Defaults
 default_environment: dev      # Used when --env not specified
 default_application: api      # Used when --app not specified (app mode only)
 
+Mappings-Only Mode (Default)
+----------------------------
+
+By default, envctl only injects explicitly mapped keys. This is the
+recommended approach because AWS secrets often use snake_case keys
+(e.g., database_url) while apps expect SCREAMING_SNAKE_CASE (e.g., DATABASE_URL).
+
+To include all keys from the primary secret, set include_all: true at
+any level (global, application, or environment):
+
+  # Global setting
+  include_all: true
+
+  # Or per-environment
+  environments:
+    dev:
+      secret: myapp/dev
+      include_all: true   # Enable for dev only
+
+You can also use the --include-all CLI flag to override at runtime.
+
 Including Additional Secrets
 ----------------------------
 
 The 'include' block pulls in keys from other AWS secrets:
 
 include:
-  # Include ALL keys from a secret
-  - secret: shared/datadog
-
-  # Include a SPECIFIC key (keeps original name)
+  # Include a SPECIFIC key (keeps original name) - always works
   - secret: shared/stripe
     key: api_key
 
@@ -86,6 +105,9 @@ include:
   - secret: myapp/redis-password
     key: _value
     as: REDIS_PASSWORD
+
+  # Include ALL keys from a secret - requires include_all: true
+  - secret: shared/datadog
 
 Mapping Entries
 ---------------
@@ -110,12 +132,22 @@ Precedence Rules
 
 When the same key appears in multiple sources, later sources win:
 
+With include_all: true (all keys mode):
 1. Primary secret (environment's 'secret' field) - lowest priority
 2. Global 'include' entries (in order)
 3. App-level 'include' entries (in order, if using applications)
 4. Global 'mapping' entries
 5. App-level 'mapping' entries (if using applications)
 6. Command-line --set overrides - highest priority
+
+Default (mappings-only mode):
+1. Global 'include' entries with specific keys
+2. App-level 'include' entries with specific keys
+3. Global 'mapping' entries
+4. App-level 'mapping' entries
+5. Command-line --set overrides - highest priority
+
+Note: In mappings-only mode, include entries without a 'key' field will error.
 
 AWS Secret Format
 -----------------
