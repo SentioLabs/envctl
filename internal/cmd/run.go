@@ -74,7 +74,8 @@ func runRun(cmd *cobra.Command, args []string) error {
 	overrides := parseOverrides(setFlags)
 
 	// Build environment
-	builder := env.NewBuilder(client, cfg, appName, envName)
+	builder := env.NewBuilder(client, cfg, appName, envName).
+		WithIncludeAll(getIncludeAllOverride(cmd))
 	entries, err := builder.Build(ctx, overrides)
 	if err != nil {
 		return err

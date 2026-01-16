@@ -71,6 +71,48 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintf(os.Stdout, "✓ Environment: %s\n", selectedEnv)
 
+	// Check include_all setting
+	includeAllOverride := getIncludeAllOverride(cmd)
+	includeAll := false
+	if includeAllOverride != nil {
+		includeAll = *includeAllOverride
+	} else {
+		includeAll = cfg.ShouldIncludeAll(app, envConfig)
+	}
+
+	if includeAll {
+		fmt.Fprintln(os.Stdout, "✓ Mode: include_all (all keys from primary secret)")
+	} else {
+		fmt.Fprintln(os.Stdout, "✓ Mode: mappings-only (explicit keys only)")
+
+		// Warn if no mappings or specific includes defined
+		totalMappings := len(cfg.Mapping)
+		if app != nil {
+			totalMappings += len(app.Mapping)
+		}
+		specificIncludes := countSpecificIncludes(cfg.Include)
+		if app != nil {
+			specificIncludes += countSpecificIncludes(app.Include)
+		}
+
+		if totalMappings == 0 && specificIncludes == 0 {
+			fmt.Fprintln(os.Stderr, "⚠ Warning: no mappings or specific includes defined")
+			fmt.Fprintln(os.Stderr, "  No environment variables will be injected")
+			fmt.Fprintln(os.Stderr, "  Add mappings or set include_all: true in config")
+		}
+
+		// Check for include entries without key
+		hasWildcardIncludes := hasIncludeAllEntries(cfg.Include)
+		if app != nil && !hasWildcardIncludes {
+			hasWildcardIncludes = hasIncludeAllEntries(app.Include)
+		}
+		if hasWildcardIncludes {
+			fmt.Fprintln(os.Stderr, "⚠ Warning: include entries without 'key' will fail")
+			fmt.Fprintln(os.Stderr, "  In mappings-only mode, includes must specify a key")
+			fmt.Fprintln(os.Stderr, "  Add 'key' to include entries or set include_all: true")
+		}
+	}
+
 	// Create AWS client with caching
 	client, err := createSecretsClient(ctx, cfg, envConfig.Region, envConfig.Profile)
 	if err != nil {
@@ -157,4 +199,25 @@ func validateMapping(client *aws.SecretsClient, ctx context.Context, mapping map
 		}
 	}
 	return nil
+}
+
+// countSpecificIncludes counts include entries that specify a key.
+func countSpecificIncludes(includes []config.IncludeEntry) int {
+	count := 0
+	for _, inc := range includes {
+		if inc.Key != "" {
+			count++
+		}
+	}
+	return count
+}
+
+// hasIncludeAllEntries checks if any include entry doesn't specify a key.
+func hasIncludeAllEntries(includes []config.IncludeEntry) bool {
+	for _, inc := range includes {
+		if inc.Key == "" {
+			return true
+		}
+	}
+	return false
 }

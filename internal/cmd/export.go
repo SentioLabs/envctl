@@ -75,7 +75,8 @@ func runExport(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build environment
-	builder := env.NewBuilder(client, cfg, appName, envName)
+	builder := env.NewBuilder(client, cfg, appName, envName).
+		WithIncludeAll(getIncludeAllOverride(cmd))
 	entries, err := builder.Build(ctx, nil)
 	if err != nil {
 		return err

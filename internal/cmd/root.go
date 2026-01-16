@@ -21,6 +21,7 @@ var (
 	verbose    bool
 	noCache    bool
 	refresh    bool
+	includeAll bool // Include all keys from primary secret (override config)
 
 	rootCmd = &cobra.Command{
 		Use:   "envctl",
@@ -42,6 +43,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&noCache, "no-cache", false, "bypass secret cache")
 	rootCmd.PersistentFlags().BoolVar(&refresh, "refresh", false, "force refresh secrets and update cache")
+	rootCmd.PersistentFlags().BoolVar(&includeAll, "include-all", false, "include all keys from primary secret (override config)")
 
 	// Register custom completions
 	rootCmd.RegisterFlagCompletionFunc("app", completeApplicationNames)
@@ -193,4 +195,13 @@ func resolveEnvironmentConfig(cfg *config.Config) (*config.Environment, *config.
 		return nil, nil, err
 	}
 	return env, nil, nil
+}
+
+// getIncludeAllOverride returns a pointer to the includeAll flag if it was explicitly set,
+// or nil if the user didn't specify the flag (to use config default).
+func getIncludeAllOverride(cmd *cobra.Command) *bool {
+	if cmd.Flags().Changed("include-all") {
+		return &includeAll
+	}
+	return nil
 }

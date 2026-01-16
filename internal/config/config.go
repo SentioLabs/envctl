@@ -23,6 +23,7 @@ type Config struct {
 	Version            int                       `yaml:"version"`
 	DefaultApplication string                    `yaml:"default_application,omitempty"`
 	DefaultEnvironment string                    `yaml:"default_environment,omitempty"`
+	IncludeAll         *bool                     `yaml:"include_all,omitempty"` // Include all keys from primary secret (default: false)
 	Applications       map[string]*Application   `yaml:"applications,omitempty"`
 	Environments       map[string]Environment    `yaml:"environments,omitempty"`
 	Include            []IncludeEntry            `yaml:"include,omitempty"`
@@ -35,6 +36,7 @@ type Application struct {
 	Environments map[string]Environment `yaml:",inline"`
 	Include      []IncludeEntry         `yaml:"include,omitempty"`
 	Mapping      map[string]string      `yaml:"mapping,omitempty"`
+	IncludeAll   *bool                  `yaml:"include_all,omitempty"` // Include all keys from primary secret (default: false)
 }
 
 // CacheConfig represents cache configuration.
@@ -46,9 +48,10 @@ type CacheConfig struct {
 
 // Environment represents a single environment configuration.
 type Environment struct {
-	Secret  string `yaml:"secret"`
-	Region  string `yaml:"region,omitempty"`
-	Profile string `yaml:"profile,omitempty"`
+	Secret     string `yaml:"secret"`
+	Region     string `yaml:"region,omitempty"`
+	Profile    string `yaml:"profile,omitempty"`
+	IncludeAll *bool  `yaml:"include_all,omitempty"` // Include all keys from primary secret (default: false)
 }
 
 // IncludeEntry represents an additional secret to include.
@@ -291,4 +294,23 @@ func (c *Config) CacheBackend() string {
 		return ""
 	}
 	return c.Cache.Backend
+}
+
+// ShouldIncludeAll resolves include_all setting with precedence: env > app > global.
+// Returns false by default (mappings-only mode).
+func (c *Config) ShouldIncludeAll(app *Application, env *Environment) bool {
+	// Environment-level has highest precedence
+	if env != nil && env.IncludeAll != nil {
+		return *env.IncludeAll
+	}
+	// Application-level next
+	if app != nil && app.IncludeAll != nil {
+		return *app.IncludeAll
+	}
+	// Global config
+	if c.IncludeAll != nil {
+		return *c.IncludeAll
+	}
+	// Default: mappings-only mode
+	return false
 }

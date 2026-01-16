@@ -6,6 +6,7 @@ import (
 
 	"github.com/sentiolabs/envctl/internal/aws"
 	"github.com/sentiolabs/envctl/internal/config"
+	"github.com/sentiolabs/envctl/internal/errors"
 )
 
 // Entry represents a resolved environment variable with its source.
@@ -17,12 +18,13 @@ type Entry struct {
 
 // Builder builds environment variables from configuration.
 type Builder struct {
-	secrets *aws.SecretsClient
-	config  *config.Config
-	appName string
-	envName string
-	app     *config.Application // Resolved application (nil in legacy mode)
-	env     *config.Environment // Resolved environment
+	secrets    *aws.SecretsClient
+	config     *config.Config
+	appName    string
+	envName    string
+	app        *config.Application // Resolved application (nil in legacy mode)
+	env        *config.Environment // Resolved environment
+	includeAll *bool               // CLI override for include_all setting
 }
 
 // NewBuilder creates a new environment builder.
@@ -36,8 +38,25 @@ func NewBuilder(secrets *aws.SecretsClient, cfg *config.Config, appName, envName
 	}
 }
 
+// WithIncludeAll sets the CLI override for include_all setting.
+// Returns the builder for method chaining.
+func (b *Builder) WithIncludeAll(val *bool) *Builder {
+	b.includeAll = val
+	return b
+}
+
+// shouldIncludeAll determines if all keys from primary secret should be included.
+// Checks CLI override first, then delegates to config precedence.
+func (b *Builder) shouldIncludeAll() bool {
+	if b.includeAll != nil {
+		return *b.includeAll
+	}
+	return b.config.ShouldIncludeAll(b.app, b.env)
+}
+
 // Build resolves all environment variables according to precedence rules.
-// Order: primary secret -> global includes -> app includes -> global mapping -> app mapping -> overrides
+// Default (mappings-only): includes (specific) -> mappings -> overrides
+// With include_all: primary secret -> includes -> mappings -> overrides
 func (b *Builder) Build(ctx context.Context, overrides map[string]string) ([]Entry, error) {
 	entries := make(map[string]Entry)
 
@@ -46,27 +65,31 @@ func (b *Builder) Build(ctx context.Context, overrides map[string]string) ([]Ent
 		return nil, err
 	}
 
-	// 1. Load primary secret (all keys)
-	secrets, err := b.secrets.GetSecret(ctx, b.env.Secret)
-	if err != nil {
-		return nil, err
-	}
-	for key, value := range secrets {
-		entries[key] = Entry{
-			Key:    key,
-			Value:  value,
-			Source: b.env.Secret,
+	includeAll := b.shouldIncludeAll()
+
+	// 1. Load primary secret (all keys) - only when include_all is enabled
+	if includeAll {
+		secrets, err := b.secrets.GetSecret(ctx, b.env.Secret)
+		if err != nil {
+			return nil, err
+		}
+		for key, value := range secrets {
+			entries[key] = Entry{
+				Key:    key,
+				Value:  value,
+				Source: b.env.Secret,
+			}
 		}
 	}
 
 	// 2. Process global include entries (in order)
-	if err := b.processIncludes(ctx, entries, b.config.Include); err != nil {
+	if err := b.processIncludes(ctx, entries, b.config.Include, includeAll); err != nil {
 		return nil, err
 	}
 
 	// 3. Process app-level include entries (if in application mode)
 	if b.app != nil && len(b.app.Include) > 0 {
-		if err := b.processIncludes(ctx, entries, b.app.Include); err != nil {
+		if err := b.processIncludes(ctx, entries, b.app.Include, includeAll); err != nil {
 			return nil, err
 		}
 	}
@@ -123,7 +146,8 @@ func (b *Builder) resolveConfig() error {
 }
 
 // processIncludes processes a list of include entries.
-func (b *Builder) processIncludes(ctx context.Context, entries map[string]Entry, includes []config.IncludeEntry) error {
+// When includeAll is false, entries without a specific key will error.
+func (b *Builder) processIncludes(ctx context.Context, entries map[string]Entry, includes []config.IncludeEntry, includeAll bool) error {
 	for _, inc := range includes {
 		if inc.Key != "" {
 			// Extract specific key
@@ -141,7 +165,10 @@ func (b *Builder) processIncludes(ctx context.Context, entries map[string]Entry,
 				Source: inc.Secret,
 			}
 		} else {
-			// Include all keys from secret
+			// Include all keys from secret - requires include_all to be enabled
+			if !includeAll {
+				return &errors.IncludeAllRequiredError{Secret: inc.Secret}
+			}
 			incSecrets, err := b.secrets.GetSecret(ctx, inc.Secret)
 			if err != nil {
 				return err

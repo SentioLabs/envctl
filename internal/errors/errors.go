@@ -112,3 +112,13 @@ type SecretRefError struct {
 func (e *SecretRefError) Error() string {
 	return fmt.Sprintf("invalid secret reference %q: %s", e.Ref, e.Message)
 }
+
+// IncludeAllRequiredError is returned when an include entry doesn't specify a key
+// and include_all is not enabled.
+type IncludeAllRequiredError struct {
+	Secret string
+}
+
+func (e *IncludeAllRequiredError) Error() string {
+	return fmt.Sprintf("include entry for %q must specify 'key' (or set include_all: true to include all keys)", e.Secret)
+}
