@@ -1,16 +1,24 @@
 # envctl
 
-A lightweight CLI tool that enables developers to use AWS Secrets Manager as the single source of truth for application secrets during local development.
+A lightweight CLI tool that enables developers to use a secrets manager as the single source of truth for application secrets during local development.
+
+## Supported Backends
+
+| Backend | Authentication | Best For |
+|---------|---------------|----------|
+| **AWS Secrets Manager** | IAM credentials, SSO, profiles | Teams using AWS infrastructure |
+| **1Password** | Biometrics (Touch ID, Windows Hello), CLI | Teams using 1Password for secrets |
 
 ## Features
 
 - **Single source of truth** - Use the same secrets in local development that run in production
+- **Multiple backends** - Support for AWS Secrets Manager and 1Password
 - **Minimal secrets on disk** - Inject secrets directly into process environment; generate `.env` files only when needed
 - **Simple developer experience** - `envctl run -- make dev` is all you need
 - **Self-documenting** - Config files declare what secrets an app needs without containing values
-- **AWS-native** - Leverages existing AWS credentials and IAM policies
+- **Biometric authentication** - 1Password backend supports Touch ID, Windows Hello, and other biometrics
 - **Docker Compose compatible** - Full support for `.env` file workflows
-- **Intelligent caching** - Secure local caching reduces AWS API calls and improves performance
+- **Intelligent caching** - Secure local caching reduces API calls and improves performance (AWS backend)
 
 ## Installation
 
@@ -63,12 +71,22 @@ After installing completions, restart your shell or source your profile.
 
 ### 1. Initialize Configuration
 
+**For AWS Secrets Manager:**
 ```bash
 cd your-project
 envctl init --secret myapp/dev
 ```
 
+**For 1Password:**
+```bash
+cd your-project
+envctl init --backend 1password --secret "My App Secrets"
+```
+
 This creates `.envctl.yaml`:
+
+<details>
+<summary>AWS Secrets Manager config</summary>
 
 ```yaml
 version: 1
@@ -78,6 +96,25 @@ environments:
   dev:
     secret: myapp/dev
 ```
+</details>
+
+<details>
+<summary>1Password config</summary>
+
+```yaml
+version: 1
+backend: 1password
+
+onepassword:
+  vault: Development
+
+default_environment: dev
+
+environments:
+  dev:
+    secret: My App Secrets
+```
+</details>
 
 ### 2. Validate Setup
 
@@ -90,7 +127,7 @@ Output:
 ✓ Config file: .envctl.yaml
 ✓ Environment: dev
 ✓ Mode: mappings-only (explicit keys only)
-✓ AWS credentials: valid
+✓ Backend: aws (authenticated)
 ✓ Secret 'myapp/dev': accessible (5 keys)
 
 Total: 5 environment variables will be set
@@ -545,6 +582,86 @@ aws secretsmanager put-secret-value \
   --secret-id myapp/dev \
   --secret-string '{"DATABASE_URL":"postgres://localhost/myapp","API_KEY":"new-key"}'
 ```
+
+## 1Password Setup
+
+### Prerequisites
+
+1. **Install 1Password desktop app**
+
+2. **Install 1Password CLI:**
+   ```bash
+   # macOS
+   brew install --cask 1password-cli
+
+   # Linux - see https://developer.1password.com/docs/cli/get-started/
+   ```
+
+3. **Enable CLI integration:**
+   - Open 1Password → Settings → Developer
+   - Enable "Integrate with 1Password CLI"
+
+4. **Verify setup:**
+   ```bash
+   op account list
+   op vault list
+   ```
+
+### Configuration
+
+```yaml
+version: 1
+backend: 1password
+
+onepassword:
+  vault: Development  # Default vault name
+  # account: my-account  # Optional: for multi-account setups
+
+default_environment: dev
+
+environments:
+  dev:
+    secret: My App Dev Secrets  # 1Password item name
+  staging:
+    secret: My App Staging Secrets
+```
+
+### How 1Password Items Map to Environment Variables
+
+1Password item fields become environment variables:
+
+```
+1Password Item: "My App Secrets"
+├── DATABASE_URL  →  DATABASE_URL=postgres://...
+├── API_KEY       →  API_KEY=sk-...
+└── REDIS_URL     →  REDIS_URL=redis://...
+```
+
+Field labels become variable names. Only non-empty fields with labels are included.
+
+### Creating Items for envctl
+
+You can create items via the 1Password app or CLI:
+
+```bash
+# Create a Secure Note with custom fields
+op item create \
+  --category="Secure Note" \
+  --title="My App Dev Secrets" \
+  --vault="Development" \
+  'DATABASE_URL=postgres://localhost:5432/myapp' \
+  'API_KEY=sk-dev-12345' \
+  'REDIS_URL=redis://localhost:6379'
+```
+
+### Authentication
+
+The 1Password backend uses biometric authentication via the desktop app:
+- **macOS**: Touch ID
+- **Windows**: Windows Hello
+- **Linux**: System authentication via PolKit
+
+No tokens or credentials to manage - just unlock 1Password once per session.
 
 ## CLI Reference
 
