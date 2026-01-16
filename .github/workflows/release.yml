@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Install git-cliff
+        uses: kenji-miyake/setup-git-cliff@v2
+
+      - name: Generate release notes
+        run: git-cliff --current --strip header > RELEASE_NOTES.md
+
+      - name: Build binaries
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          LDFLAGS="-X github.com/sentiolabs/envctl/internal/version.Version=$VERSION"
+          LDFLAGS="$LDFLAGS -X github.com/sentiolabs/envctl/internal/version.GitCommit=$GITHUB_SHA"
+          LDFLAGS="$LDFLAGS -X github.com/sentiolabs/envctl/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          mkdir -p dist
+
+          GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/envctl-darwin-amd64 ./cmd/envctl
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/envctl-darwin-arm64 ./cmd/envctl
+          GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/envctl-linux-amd64 ./cmd/envctl
+          GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/envctl-linux-arm64 ./cmd/envctl
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: RELEASE_NOTES.md
+          files: dist/*

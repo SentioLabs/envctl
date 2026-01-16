@@ -1,8 +1,16 @@
-.PHONY: build test lint install clean tidy fmt
+.PHONY: build test lint install clean tidy fmt changelog changelog-unreleased
+
+# Version info
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+LDFLAGS = -X github.com/sentiolabs/envctl/internal/version.Version=$(VERSION) \
+          -X github.com/sentiolabs/envctl/internal/version.GitCommit=$(GIT_COMMIT) \
+          -X github.com/sentiolabs/envctl/internal/version.BuildDate=$(BUILD_DATE)
 
 # Build the binary
 build:
-	go build -o bin/envctl ./cmd/envctl
+	go build -ldflags "$(LDFLAGS)" -o bin/envctl ./cmd/envctl
 
 # Run tests
 test:
@@ -19,7 +27,7 @@ lint:
 
 # Install to GOPATH/bin
 install:
-	go install ./cmd/envctl
+	go install -ldflags "$(LDFLAGS)" ./cmd/envctl
 
 # Clean build artifacts
 clean:
@@ -35,3 +43,11 @@ fmt:
 
 # Run all checks
 check: fmt tidy lint test
+
+# Generate full changelog
+changelog:
+	git-cliff -o CHANGELOG.md
+
+# Show unreleased changes
+changelog-unreleased:
+	git-cliff --unreleased
