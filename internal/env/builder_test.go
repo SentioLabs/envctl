@@ -297,6 +297,70 @@ func TestBuilder_Build_ErrorFromSecretClient(t *testing.T) {
 	assert.ErrorIs(t, err, expectedErr)
 }
 
+func TestBuilder_Build_ApplicationMode_1PassBackend(t *testing.T) {
+	// Test that environments with 1Password config work through the builder in application mode
+	ctx := t.Context()
+	mockClient := mocks.NewMockClient(t)
+
+	cfg := &config.Config{
+		Version:            1,
+		DefaultApplication: "api",
+		Applications: map[string]*config.Application{
+			"api": {
+				Environments: map[string]config.Environment{
+					"local": {
+						Secret:  "My App Local",
+						OnePass: &config.OnePassConfig{Vault: "Development"},
+					},
+				},
+				IncludeAll: new(true),
+			},
+		},
+	}
+
+	mockClient.On("GetSecret", mock.Anything, "My App Local").Return(map[string]string{
+		"API_KEY": "local-key",
+	}, nil)
+
+	builder := NewBuilder(mockClient, cfg, "api", "local")
+	entries, err := builder.Build(ctx, nil)
+
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
+	entryMap := ToMap(entries)
+	assert.Equal(t, "local-key", entryMap["API_KEY"])
+}
+
+func TestBuilder_Build_LegacyMode_AWSConfig(t *testing.T) {
+	// Test that environments with AWS config work through the builder
+	ctx := t.Context()
+	mockClient := mocks.NewMockClient(t)
+
+	cfg := &config.Config{
+		Version:            1,
+		DefaultEnvironment: "staging",
+		IncludeAll:         new(true),
+		Environments: map[string]config.Environment{
+			"staging": {
+				Secret: "myapp/staging",
+				AWS:    &config.AWSConfig{Region: "us-west-2", Profile: "staging"},
+			},
+		},
+	}
+
+	mockClient.On("GetSecret", mock.Anything, "myapp/staging").Return(map[string]string{
+		"DB_HOST": "staging-db.example.com",
+	}, nil)
+
+	builder := NewBuilder(mockClient, cfg, "", "staging")
+	entries, err := builder.Build(ctx, nil)
+
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
+	entryMap := ToMap(entries)
+	assert.Equal(t, "staging-db.example.com", entryMap["DB_HOST"])
+}
+
 func TestToMap(t *testing.T) {
 	entries := []Entry{
 		{Key: "KEY1", Value: "value1", Source: "secret1"},
