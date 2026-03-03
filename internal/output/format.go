@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -108,8 +108,8 @@ func writeJSONFormat(w io.Writer, entries []env.Entry) error {
 func sortEntries(entries []env.Entry) []env.Entry {
 	sorted := make([]env.Entry, len(entries))
 	copy(sorted, entries)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Key < sorted[j].Key
+	slices.SortFunc(sorted, func(a, b env.Entry) int {
+		return strings.Compare(a.Key, b.Key)
 	})
 	return sorted
 }

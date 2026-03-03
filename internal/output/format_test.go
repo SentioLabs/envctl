@@ -158,6 +158,42 @@ func TestParseFormat(t *testing.T) {
 	}
 }
 
+func TestSortEntries(t *testing.T) {
+	entries := []env.Entry{
+		{Key: "ZEBRA", Value: "z", Source: "test"},
+		{Key: "APPLE", Value: "a", Source: "test"},
+		{Key: "MANGO", Value: "m", Source: "test"},
+		{Key: "BANANA", Value: "b", Source: "test"},
+	}
+
+	sorted := sortEntries(entries)
+
+	// Verify sorted order
+	expectedOrder := []string{"APPLE", "BANANA", "MANGO", "ZEBRA"}
+	for i, key := range expectedOrder {
+		if sorted[i].Key != key {
+			t.Errorf("sortEntries()[%d].Key = %q, want %q", i, sorted[i].Key, key)
+		}
+	}
+
+	// Verify original slice is not modified
+	if entries[0].Key != "ZEBRA" {
+		t.Error("sortEntries() modified the original slice")
+	}
+}
+
+func TestSortEntriesEmpty(t *testing.T) {
+	sorted := sortEntries(nil)
+	if len(sorted) != 0 {
+		t.Errorf("sortEntries(nil) returned %d entries, want 0", len(sorted))
+	}
+
+	sorted = sortEntries([]env.Entry{})
+	if len(sorted) != 0 {
+		t.Errorf("sortEntries([]) returned %d entries, want 0", len(sorted))
+	}
+}
+
 func TestQuoteValue(t *testing.T) {
 	tests := []struct {
 		input string

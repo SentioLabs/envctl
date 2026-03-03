@@ -1,6 +1,8 @@
 // Package onepassword provides 1Password integration via the op CLI.
 package onepassword
 
+import "slices"
+
 // Item represents a 1Password item as returned by the CLI.
 // This is a simplified version focusing on what we need for secret retrieval.
 type Item struct {
@@ -74,7 +76,7 @@ func (item *Item) ToMap(filter FieldFilter) map[string]string {
 		}
 
 		// Skip excluded purposes
-		if contains(filter.ExcludePurposes, field.Purpose) {
+		if slices.Contains(filter.ExcludePurposes, field.Purpose) {
 			continue
 		}
 
@@ -114,13 +116,4 @@ func (item *Item) GetField(label string) string {
 		}
 	}
 	return ""
-}
-
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
 }
