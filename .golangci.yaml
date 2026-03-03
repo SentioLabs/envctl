@@ -163,6 +163,14 @@ linters:
           - testifylint # Testify linter
         path: _test\.go
         text: "suite-dont-use-pkg" # Allow assert.X(s.T(),...) style in test suites
+      - linters:
+          - gosec # Security checker
+        path: _test\.go
+        text: "G101" # Test fixtures use fake secret refs like "myapp/dev", not real credentials
+      - linters:
+          - revive # Style linter
+        path: internal/version/
+        text: "var-naming" # No stdlib "version" package exists; go/version is a sub-package
 
     # Directories/file patterns to exclude entirely
     paths:

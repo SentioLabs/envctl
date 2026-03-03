@@ -69,7 +69,7 @@ type OnePasswordConfig struct {
 //
 //nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type Environment struct {
-	Secret     string `yaml:"secret"`
+	Secret     string `yaml:"secret"` //nolint:gosec // G117: not credentials
 	Region     string `yaml:"region,omitempty"`
 	Profile    string `yaml:"profile,omitempty"`
 	IncludeAll *bool  `yaml:"include_all,omitempty"`
@@ -77,7 +77,7 @@ type Environment struct {
 
 // IncludeEntry represents an additional secret to include.
 type IncludeEntry struct {
-	Secret string `yaml:"secret"`
+	Secret string `yaml:"secret"` //nolint:gosec // G117: field name refers to a secret reference, not credentials
 	Key    string `yaml:"key,omitempty"`
 	As     string `yaml:"as,omitempty"`
 }

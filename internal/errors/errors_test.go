@@ -1,4 +1,4 @@
-//nolint:testpackage,revive // Testing internal error types requires same package
+//nolint:testpackage // Testing internal error types requires same package
 package errors
 
 import (

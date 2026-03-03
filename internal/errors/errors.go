@@ -42,7 +42,7 @@ type AWSError struct {
 
 func (e *AWSError) Error() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("AWS %s failed for %q: %s", e.Operation, e.SecretName, e.Message))
+	fmt.Fprintf(&sb, "AWS %s failed for %q: %s", e.Operation, e.SecretName, e.Message)
 	if e.Hint != "" {
 		sb.WriteString("\n  Hint: ")
 		sb.WriteString(e.Hint)
@@ -121,7 +121,7 @@ func (e *SecretRefError) Error() string {
 // IncludeAllRequiredError is returned when an include entry doesn't specify a key
 // and include_all is not enabled.
 type IncludeAllRequiredError struct {
-	Secret string
+	Secret string //nolint:gosec // G117: field name refers to a secret reference, not credentials
 }
 
 func (e *IncludeAllRequiredError) Error() string {
