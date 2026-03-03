@@ -78,8 +78,7 @@ func (r *Runner) Run(ctx context.Context, args []string) error {
 
 	// If the command exited with a non-zero exit code, exit with that code
 	if err != nil {
-		var exitErr *exec.ExitError
-		if ok := isExitError(err, &exitErr); ok {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			os.Exit(exitErr.ExitCode())
 		}
 		return err
@@ -105,9 +104,4 @@ func (r *Runner) buildEnv() []string {
 	}
 
 	return env
-}
-
-// isExitError checks if an error is an exec.ExitError and extracts it.
-func isExitError(err error, target **exec.ExitError) bool {
-	return errors.As(err, target)
 }
