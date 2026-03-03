@@ -20,8 +20,8 @@ const (
 
 // Backend constants for secret providers.
 const (
-	BackendAWS         = "aws"
-	BackendOnePassword = "1password"
+	BackendAWS   = "aws"
+	Backend1Pass = "1pass"
 )
 
 // Config represents the root configuration structure.
@@ -30,16 +30,16 @@ const (
 //nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type Config struct {
 	Version            int                     `yaml:"version"`
-	Backend            string                  `yaml:"backend,omitempty"`
 	DefaultApplication string                  `yaml:"default_application,omitempty"`
 	DefaultEnvironment string                  `yaml:"default_environment,omitempty"`
 	IncludeAll         *bool                   `yaml:"include_all,omitempty"`
+	AWS                *AWSConfig              `yaml:"aws,omitempty"`
+	OnePass            *OnePassConfig           `yaml:"1pass,omitempty"`
 	Applications       map[string]*Application `yaml:"applications,omitempty"`
 	Environments       map[string]Environment  `yaml:"environments,omitempty"`
 	Include            []IncludeEntry          `yaml:"include,omitempty"`
 	Mapping            map[string]string       `yaml:"mapping,omitempty"`
 	Cache              *CacheConfig            `yaml:"cache,omitempty"`
-	OnePassword        *OnePasswordConfig      `yaml:"onepassword,omitempty"`
 }
 
 // Application represents an application with its environment configurations.
@@ -59,20 +59,26 @@ type CacheConfig struct {
 	Backend string `yaml:"backend,omitempty"` // "auto", "keyring", "file", "none"
 }
 
-// OnePasswordConfig represents 1Password-specific configuration.
-type OnePasswordConfig struct {
-	Vault   string `yaml:"vault,omitempty"`   // Default vault name or ID
-	Account string `yaml:"account,omitempty"` // Account shorthand (optional, for multi-account setups)
+// AWSConfig holds AWS Secrets Manager-specific settings.
+type AWSConfig struct {
+	Region  string `yaml:"region,omitempty"`
+	Profile string `yaml:"profile,omitempty"`
+}
+
+// OnePassConfig holds 1Password-specific settings.
+type OnePassConfig struct {
+	Vault   string `yaml:"vault,omitempty"`
+	Account string `yaml:"account,omitempty"`
 }
 
 // Environment represents a single environment configuration.
 //
 //nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type Environment struct {
-	Secret     string `yaml:"secret"` //nolint:gosec // G117: not credentials
-	Region     string `yaml:"region,omitempty"`
-	Profile    string `yaml:"profile,omitempty"`
-	IncludeAll *bool  `yaml:"include_all,omitempty"`
+	Secret     string         `yaml:"secret"` //nolint:gosec // G117: not credentials
+	IncludeAll *bool          `yaml:"include_all,omitempty"`
+	AWS        *AWSConfig     `yaml:"aws,omitempty"`
+	OnePass    *OnePassConfig `yaml:"1pass,omitempty"`
 }
 
 // IncludeEntry represents an additional secret to include.
@@ -152,11 +158,11 @@ func (c *Config) Validate(path string) error {
 		}
 	}
 
-	// Validate backend if specified
-	if c.Backend != "" && c.Backend != BackendAWS && c.Backend != BackendOnePassword {
+	// Validate global backend config: cannot have both aws and 1pass
+	if c.AWS != nil && c.OnePass != nil {
 		return &errors.ConfigError{
 			Path:    path,
-			Message: "invalid backend: " + c.Backend + " (must be 'aws' or '1password')",
+			Message: "cannot specify both 'aws' and '1pass' at the global level",
 		}
 	}
 
@@ -208,11 +214,30 @@ func (c *Config) Validate(path string) error {
 		}
 	}
 
-	for name, env := range c.Environments {
+	// Validate per-environment: cannot have both aws and 1pass
+	for envName, env := range c.Environments {
 		if env.Secret == "" {
 			return &errors.ConfigError{
 				Path:    path,
-				Message: "environment " + name + " is missing required 'secret' field",
+				Message: "environment " + envName + " is missing required 'secret' field",
+			}
+		}
+		if env.AWS != nil && env.OnePass != nil {
+			return &errors.ConfigError{
+				Path:    path,
+				Message: "environment " + envName + " cannot specify both 'aws' and '1pass'",
+			}
+		}
+	}
+
+	// Same check for application environments
+	for appName, app := range c.Applications {
+		for envName, env := range app.Environments {
+			if env.AWS != nil && env.OnePass != nil {
+				return &errors.ConfigError{
+					Path:    path,
+					Message: "application " + appName + " environment " + envName + " cannot specify both 'aws' and '1pass'",
+				}
 			}
 		}
 	}
@@ -327,20 +352,6 @@ func (c *Config) CacheBackend() string {
 		return ""
 	}
 	return c.Cache.Backend
-}
-
-// GetBackend returns the configured backend.
-// Returns "aws" if not set.
-func (c *Config) GetBackend() string {
-	if c.Backend == "" {
-		return BackendAWS
-	}
-	return c.Backend
-}
-
-// IsOnePassword returns true if using 1Password backend.
-func (c *Config) IsOnePassword() bool {
-	return c.GetBackend() == BackendOnePassword
 }
 
 // ShouldIncludeAll resolves include_all setting with precedence: env > app > global.

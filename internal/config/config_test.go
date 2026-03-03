@@ -31,7 +31,8 @@ default_environment: dev
 environments:
   dev:
     secret: myapp/dev
-    region: us-west-2
+    aws:
+      region: us-west-2
   staging:
     secret: myapp/staging
 include:
@@ -66,7 +67,8 @@ environments:
 			content: `version: 1
 environments:
   dev:
-    region: us-west-2
+    aws:
+      region: us-west-2
 `,
 			wantErr: true,
 			errMsg:  "missing required 'secret' field",
@@ -91,6 +93,63 @@ environments:
 unknownField: true
 `,
 			wantErr: true,
+		},
+		{
+			name: "valid config with 1pass backend",
+			content: `version: 1
+1pass:
+  vault: dev-vault
+  account: my-account
+environments:
+  dev:
+    secret: myapp/dev
+    1pass:
+      vault: env-vault
+`,
+			wantErr: false,
+		},
+		{
+			name: "valid config with per-env backends",
+			content: `version: 1
+environments:
+  dev:
+    secret: myapp/dev
+    aws:
+      region: us-west-2
+  staging:
+    secret: myapp/staging
+    1pass:
+      vault: staging-vault
+`,
+			wantErr: false,
+		},
+		{
+			name: "invalid both backends at global level",
+			content: `version: 1
+aws:
+  region: us-east-1
+1pass:
+  vault: my-vault
+environments:
+  dev:
+    secret: myapp/dev
+`,
+			wantErr: true,
+			errMsg:  "cannot specify both 'aws' and '1pass' at the global level",
+		},
+		{
+			name: "invalid both backends on environment",
+			content: `version: 1
+environments:
+  dev:
+    secret: myapp/dev
+    aws:
+      region: us-west-2
+    1pass:
+      vault: my-vault
+`,
+			wantErr: true,
+			errMsg:  "cannot specify both 'aws' and '1pass'",
 		},
 	}
 
