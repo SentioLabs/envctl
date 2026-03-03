@@ -2,7 +2,6 @@
 package env
 
 import (
-	"context"
 	"testing"
 
 	"github.com/sentiolabs/envctl/internal/config"
@@ -15,7 +14,7 @@ import (
 
 func TestBuilder_Build_LegacyMode_IncludeAll(t *testing.T) {
 	// Test building environment variables in legacy mode with include_all enabled
-	ctx := context.Background()
+	ctx := t.Context()
 	mockClient := mocks.NewMockClient(t)
 
 	cfg := &config.Config{
@@ -49,7 +48,7 @@ func TestBuilder_Build_LegacyMode_IncludeAll(t *testing.T) {
 
 func TestBuilder_Build_LegacyMode_MappingsOnly(t *testing.T) {
 	// Test building environment variables with explicit mappings only (include_all disabled)
-	ctx := context.Background()
+	ctx := t.Context()
 	mockClient := mocks.NewMockClient(t)
 
 	cfg := &config.Config{
@@ -80,7 +79,7 @@ func TestBuilder_Build_LegacyMode_MappingsOnly(t *testing.T) {
 
 func TestBuilder_Build_WithIncludes_SpecificKey(t *testing.T) {
 	// Test include entries that specify a specific key
-	ctx := context.Background()
+	ctx := t.Context()
 	mockClient := mocks.NewMockClient(t)
 
 	cfg := &config.Config{
@@ -115,7 +114,7 @@ func TestBuilder_Build_WithIncludes_SpecificKey(t *testing.T) {
 
 func TestBuilder_Build_WithIncludes_AllKeys(t *testing.T) {
 	// Test include entries that include all keys from a secret (requires include_all)
-	ctx := context.Background()
+	ctx := t.Context()
 	mockClient := mocks.NewMockClient(t)
 
 	cfg := &config.Config{
@@ -155,7 +154,7 @@ func TestBuilder_Build_WithIncludes_AllKeys(t *testing.T) {
 
 func TestBuilder_Build_IncludeWithoutKey_RequiresIncludeAll(t *testing.T) {
 	// Test that include entries without a key fail when include_all is disabled
-	ctx := context.Background()
+	ctx := t.Context()
 	mockClient := mocks.NewMockClient(t)
 
 	cfg := &config.Config{
@@ -181,7 +180,7 @@ func TestBuilder_Build_IncludeWithoutKey_RequiresIncludeAll(t *testing.T) {
 
 func TestBuilder_Build_WithOverrides(t *testing.T) {
 	// Test that overrides take precedence over all other sources
-	ctx := context.Background()
+	ctx := t.Context()
 	mockClient := mocks.NewMockClient(t)
 
 	cfg := &config.Config{
@@ -215,7 +214,7 @@ func TestBuilder_Build_WithOverrides(t *testing.T) {
 
 func TestBuilder_Build_CLIIncludeAllOverride(t *testing.T) {
 	// Test that CLI --include-all flag overrides config setting
-	ctx := context.Background()
+	ctx := t.Context()
 	mockClient := mocks.NewMockClient(t)
 
 	cfg := &config.Config{
@@ -245,7 +244,7 @@ func TestBuilder_Build_CLIIncludeAllOverride(t *testing.T) {
 
 func TestBuilder_Build_ApplicationMode(t *testing.T) {
 	// Test building environment in application mode
-	ctx := context.Background()
+	ctx := t.Context()
 	mockClient := mocks.NewMockClient(t)
 
 	cfg := &config.Config{
@@ -276,7 +275,7 @@ func TestBuilder_Build_ApplicationMode(t *testing.T) {
 
 func TestBuilder_Build_ErrorFromSecretClient(t *testing.T) {
 	// Test that errors from the secrets client are propagated
-	ctx := context.Background()
+	ctx := t.Context()
 	mockClient := mocks.NewMockClient(t)
 
 	cfg := &config.Config{
