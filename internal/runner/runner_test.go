@@ -1,7 +1,7 @@
+//nolint:testpackage // Testing internal functions requires same package
 package runner
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -13,14 +13,14 @@ import (
 
 func TestRunNoCommand(t *testing.T) {
 	r := NewRunner(map[string]string{})
-	err := r.Run(context.Background(), []string{})
+	err := r.Run(t.Context(), []string{})
 	require.Error(t, err)
 	assert.Equal(t, "no command specified", err.Error())
 }
 
 func TestRunInvalidCommand(t *testing.T) {
 	r := NewRunner(map[string]string{"FOO": "bar"})
-	err := r.Run(context.Background(), []string{"/nonexistent-command-abc123"})
+	err := r.Run(t.Context(), []string{"/nonexistent-command-abc123"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to start command")
 }
@@ -81,7 +81,7 @@ func TestExitErrorDetectionUsesAsType(t *testing.T) {
 	assert.Equal(t, baseErr, exitErr)
 
 	// Non-exit error should not match
-	otherErr := fmt.Errorf("some other error")
+	otherErr := errors.New("some other error")
 	_, ok = errors.AsType[*exec.ExitError](otherErr)
 	assert.False(t, ok)
 }

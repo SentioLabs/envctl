@@ -1,3 +1,4 @@
+//nolint:testpackage // Testing internal functions requires same package
 package aws
 
 import (
@@ -18,9 +19,9 @@ type mockAPIError struct {
 	message string
 }
 
-func (e *mockAPIError) Error() string            { return e.message }
-func (e *mockAPIError) ErrorCode() string         { return e.code }
-func (e *mockAPIError) ErrorMessage() string      { return e.message }
+func (e *mockAPIError) Error() string                 { return e.message }
+func (e *mockAPIError) ErrorCode() string             { return e.code }
+func (e *mockAPIError) ErrorMessage() string          { return e.message }
 func (e *mockAPIError) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
 
 func TestIsNonRetryableError(t *testing.T) {
@@ -31,22 +32,22 @@ func TestIsNonRetryableError(t *testing.T) {
 	}{
 		{
 			name: "ResourceNotFoundException is non-retryable",
-			err:  &types.ResourceNotFoundException{Message: ptr("not found")},
+			err:  &types.ResourceNotFoundException{Message: new("not found")},
 			want: true,
 		},
 		{
 			name: "wrapped ResourceNotFoundException is non-retryable",
-			err:  fmt.Errorf("wrapped: %w", &types.ResourceNotFoundException{Message: ptr("not found")}),
+			err:  fmt.Errorf("wrapped: %w", &types.ResourceNotFoundException{Message: new("not found")}),
 			want: true,
 		},
 		{
 			name: "InvalidParameterException is non-retryable",
-			err:  &types.InvalidParameterException{Message: ptr("invalid param")},
+			err:  &types.InvalidParameterException{Message: new("invalid param")},
 			want: true,
 		},
 		{
 			name: "InvalidRequestException is non-retryable",
-			err:  &types.InvalidRequestException{Message: ptr("invalid request")},
+			err:  &types.InvalidRequestException{Message: new("invalid request")},
 			want: true,
 		},
 		{
@@ -117,7 +118,7 @@ func TestIsAccessDenied(t *testing.T) {
 
 func TestMapAWSError(t *testing.T) {
 	t.Run("ResourceNotFoundException maps to SecretNotFoundError", func(t *testing.T) {
-		err := &types.ResourceNotFoundException{Message: ptr("not found")}
+		err := &types.ResourceNotFoundException{Message: new("not found")}
 		result := mapAWSError("my-secret", err)
 
 		var notFound *errors.SecretNotFoundError
@@ -126,7 +127,7 @@ func TestMapAWSError(t *testing.T) {
 	})
 
 	t.Run("wrapped ResourceNotFoundException maps to SecretNotFoundError", func(t *testing.T) {
-		err := fmt.Errorf("wrapped: %w", &types.ResourceNotFoundException{Message: ptr("not found")})
+		err := fmt.Errorf("wrapped: %w", &types.ResourceNotFoundException{Message: new("not found")})
 		result := mapAWSError("my-secret", err)
 
 		var notFound *errors.SecretNotFoundError
@@ -153,8 +154,4 @@ func TestMapAWSError(t *testing.T) {
 		assert.Equal(t, "GetSecretValue", awsErr.Operation)
 		assert.Contains(t, awsErr.Message, "network failure")
 	})
-}
-
-func ptr(s string) *string {
-	return &s
 }
