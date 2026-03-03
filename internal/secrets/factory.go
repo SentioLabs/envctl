@@ -12,48 +12,52 @@ import (
 // Options configures the secrets client factory.
 type Options struct {
 	Config  *config.Config
-	Region  string // AWS region override
-	Profile string // AWS profile override
+	Env     *config.Environment
 	Cache   *cache.Manager
 	NoCache bool
 	Refresh bool
 }
 
-// NewClient creates a secrets client based on the configured backend.
-// Returns an AWS client by default, or a 1Password client if configured.
+// NewClient creates a secrets client based on the resolved environment's backend.
+// Uses config.ResolveBackend to determine which backend to use, with precedence:
+// environment block > global block > default (aws).
 func NewClient(ctx context.Context, opts Options) (Client, error) {
 	backend := config.BackendAWS
 	if opts.Config != nil {
-		backend = opts.Config.GetBackend()
+		backend = opts.Config.ResolveBackend(opts.Env)
 	}
 
 	switch backend {
-	case config.BackendOnePassword:
-		return newOnePasswordClient(opts)
+	case config.Backend1Pass:
+		opCfg := config.OnePassConfig{}
+		if opts.Config != nil {
+			opCfg = opts.Config.ResolveOnePassConfig(opts.Env)
+		}
+		return newOnePasswordClient(opCfg, opts)
 	default:
-		return newAWSClient(ctx, opts)
+		awsCfg := config.AWSConfig{}
+		if opts.Config != nil {
+			awsCfg = opts.Config.ResolveAWSConfig(opts.Env)
+		}
+		return newAWSClient(ctx, awsCfg, opts)
 	}
 }
 
-// newAWSClient creates an AWS Secrets Manager client.
-func newAWSClient(ctx context.Context, opts Options) (Client, error) {
+// newAWSClient creates an AWS Secrets Manager client using resolved AWS config.
+func newAWSClient(ctx context.Context, awsCfg config.AWSConfig, opts Options) (Client, error) {
 	return aws.NewSecretsClientWithOptions(ctx, aws.ClientOptions{
-		Region:  opts.Region,
-		Profile: opts.Profile,
+		Region:  awsCfg.Region,
+		Profile: awsCfg.Profile,
 		Cache:   opts.Cache,
 		NoCache: opts.NoCache,
 		Refresh: opts.Refresh,
 	})
 }
 
-// newOnePasswordClient creates a 1Password client.
-func newOnePasswordClient(opts Options) (Client, error) {
-	var opOpts onepassword.ClientOptions
-
-	if opts.Config != nil && opts.Config.OnePassword != nil {
-		opOpts.DefaultVault = opts.Config.OnePassword.Vault
-		opOpts.Account = opts.Config.OnePassword.Account
-	}
-
-	return onepassword.NewClient(opOpts)
+// newOnePasswordClient creates a 1Password client using resolved OnePass config.
+func newOnePasswordClient(opCfg config.OnePassConfig, opts Options) (Client, error) {
+	return onepassword.NewClient(onepassword.ClientOptions{
+		DefaultVault: opCfg.Vault,
+		Account:      opCfg.Account,
+	})
 }
