@@ -77,8 +77,8 @@ func runGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Create AWS client with caching
-	client, err := createSecretsClient(ctx, cfg, envConfig.Region, envConfig.Profile)
+	// Create secrets client with caching
+	client, err := createSecretsClient(ctx, cfg, envConfig)
 	if err != nil {
 		return err
 	}
@@ -123,7 +123,7 @@ func getFromSecret(ctx context.Context, ref string) error {
 		}
 	}
 
-	// Create AWS client with caching
+	// Create AWS client with caching (direct secret access bypasses config)
 	client, err := aws.NewSecretsClientWithOptions(ctx, aws.ClientOptions{
 		Region:  "",
 		Cache:   cacheManager,

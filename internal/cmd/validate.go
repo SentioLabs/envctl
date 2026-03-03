@@ -15,12 +15,12 @@ import (
 // validateCmd tests configuration validity and backend connectivity.
 var validateCmd = &cobra.Command{
 	Use:   "validate",
-	Short: "Validate configuration and AWS connectivity",
-	Long: `Validate the configuration file and test AWS connectivity.
+	Short: "Validate configuration and backend connectivity",
+	Long: `Validate the configuration file and test backend connectivity.
 
 This checks:
 - Config file syntax and required fields
-- AWS credentials are valid
+- Backend credentials are valid
 - All referenced secrets are accessible
 - All mapping references resolve correctly
 
@@ -124,7 +124,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create secrets client
-	client, err := createSecretsClient(ctx, cfg, envConfig.Region, envConfig.Profile)
+	client, err := createSecretsClient(ctx, cfg, envConfig)
 	if err != nil {
 		return err
 	}

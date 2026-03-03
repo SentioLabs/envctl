@@ -57,8 +57,8 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Create AWS client with caching
-	client, err := createSecretsClient(ctx, cfg, envConfig.Region, envConfig.Profile)
+	// Create secrets client with caching
+	client, err := createSecretsClient(ctx, cfg, envConfig)
 	if err != nil {
 		return err
 	}

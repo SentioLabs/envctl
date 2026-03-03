@@ -25,9 +25,10 @@ var (
 
 	rootCmd = &cobra.Command{
 		Use:   "envctl",
-		Short: "AWS Secrets Manager CLI for local development",
-		Long: `envctl enables developers to use AWS Secrets Manager as the single source
-of truth for application secrets during local development.
+		Short: "Secrets CLI for local development",
+		Long: `envctl enables developers to use secrets backends (AWS Secrets Manager,
+1Password) as the single source of truth for application secrets during
+local development.
 
 It provides a simple way to inject secrets into process environments or
 generate .env files for Docker Compose workflows.`,
@@ -72,12 +73,14 @@ func verboseLog(format string, args ...any) {
 }
 
 // createSecretsClient creates a secrets client based on the configured backend.
-func createSecretsClient(ctx context.Context, cfg *config.Config, region, profile string) (secrets.Client, error) {
+func createSecretsClient(ctx context.Context, cfg *config.Config, envConfig *config.Environment) (secrets.Client, error) {
 	var cacheManager *cache.Manager
+
+	backend := cfg.ResolveBackend(envConfig)
 
 	// Set up cache if enabled (and not bypassed)
 	// Note: cache only applies to AWS backend currently
-	if cfg.CacheEnabled() && !noCache && !cfg.IsOnePassword() {
+	if cfg.CacheEnabled() && !noCache && backend != config.Backend1Pass {
 		cacheOpts := cache.Options{
 			Enabled: true,
 			TTL:     cfg.CacheTTL(),
@@ -101,17 +104,18 @@ func createSecretsClient(ctx context.Context, cfg *config.Config, region, profil
 		}
 	}
 
-	backend := cfg.GetBackend()
 	verboseLog("Using secrets backend: %s", backend)
 
-	if backend == config.BackendAWS && profile != "" {
-		verboseLog("Using AWS profile: %s", profile)
+	if backend == config.BackendAWS {
+		awsCfg := cfg.ResolveAWSConfig(envConfig)
+		if awsCfg.Profile != "" {
+			verboseLog("Using AWS profile: %s", awsCfg.Profile)
+		}
 	}
 
 	return secrets.NewClient(ctx, secrets.Options{
 		Config:  cfg,
-		Region:  region,
-		Profile: profile,
+		Env:     envConfig,
 		Cache:   cacheManager,
 		NoCache: noCache,
 		Refresh: refresh,

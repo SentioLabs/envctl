@@ -19,11 +19,11 @@ var (
 	runCmd = &cobra.Command{
 		Use:   "run [flags] -- command [args...]",
 		Short: "Run a command with secrets injected as environment variables",
-		Long: `Run executes a command with secrets from AWS Secrets Manager injected
+		Long: `Run executes a command with secrets from your configured backend injected
 into its environment. This is the primary workflow for local development.
 
-Secrets are fetched from AWS, merged with the current environment (secrets
-take precedence), and the command is executed with the merged environment.
+Secrets are fetched from your backend, merged with the current environment
+(secrets take precedence), and the command is executed with the merged environment.
 
 Example:
   envctl run -- go run ./cmd/server
@@ -67,8 +67,8 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 	verboseLog("Using environment: %s (secret: %s)", envName, envConfig.Secret)
 
-	// Create AWS client with caching
-	client, err := createSecretsClient(ctx, cfg, envConfig.Region, envConfig.Profile)
+	// Create secrets client with caching
+	client, err := createSecretsClient(ctx, cfg, envConfig)
 	if err != nil {
 		return err
 	}
