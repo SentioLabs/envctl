@@ -1,4 +1,4 @@
-.PHONY: build test lint install clean tidy fmt changelog changelog-unreleased
+.PHONY: build test lint install clean tidy fmt release-snapshot
 
 # Version info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -31,7 +31,7 @@ install:
 
 # Clean build artifacts
 clean:
-	rm -rf bin/ coverage.out coverage.html
+	rm -rf bin/ dist/ coverage.out coverage.html
 
 # Tidy dependencies
 tidy:
@@ -44,10 +44,6 @@ fmt:
 # Run all checks
 check: fmt tidy lint test
 
-# Generate full changelog
-changelog:
-	git-cliff -o CHANGELOG.md
-
-# Show unreleased changes
-changelog-unreleased:
-	git-cliff --unreleased
+# GoReleaser snapshot (local dry-run)
+release-snapshot:
+	goreleaser release --snapshot --clean

@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+#
+# goreleaser configuration for envctl
+# https://goreleaser.com
+
+version: 2
+
+project_name: envctl
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: envctl
+    main: ./cmd/envctl
+    binary: envctl
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X github.com/sentiolabs/envctl/internal/version.Version={{.Version}}
+      - -X github.com/sentiolabs/envctl/internal/version.GitCommit={{.Commit}}
+      - -X github.com/sentiolabs/envctl/internal/version.BuildDate={{.Date}}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Refactoring
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - "^chore"
+      - "^docs"
+      - "^test"
+      - "^ci"
+      - "^Merge"
+
+release:
+  github:
+    owner: sentiolabs
+    name: envctl
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
