@@ -13,10 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func boolPtr(b bool) *bool {
-	return &b
-}
-
 func TestBuilder_Build_LegacyMode_IncludeAll(t *testing.T) {
 	// Test building environment variables in legacy mode with include_all enabled
 	ctx := context.Background()
@@ -25,7 +21,7 @@ func TestBuilder_Build_LegacyMode_IncludeAll(t *testing.T) {
 	cfg := &config.Config{
 		Version:            1,
 		DefaultEnvironment: "dev",
-		IncludeAll:         boolPtr(true),
+		IncludeAll:         new(true),
 		Environments: map[string]config.Environment{
 			"dev": {Secret: "my-app/dev"},
 		},
@@ -59,7 +55,7 @@ func TestBuilder_Build_LegacyMode_MappingsOnly(t *testing.T) {
 	cfg := &config.Config{
 		Version:            1,
 		DefaultEnvironment: "dev",
-		IncludeAll:         boolPtr(false), // Explicitly disabled
+		IncludeAll:         new(false), // Explicitly disabled
 		Environments: map[string]config.Environment{
 			"dev": {Secret: "my-app/dev"},
 		},
@@ -90,7 +86,7 @@ func TestBuilder_Build_WithIncludes_SpecificKey(t *testing.T) {
 	cfg := &config.Config{
 		Version:            1,
 		DefaultEnvironment: "dev",
-		IncludeAll:         boolPtr(false),
+		IncludeAll:         new(false),
 		Environments: map[string]config.Environment{
 			"dev": {Secret: "my-app/dev"},
 		},
@@ -125,7 +121,7 @@ func TestBuilder_Build_WithIncludes_AllKeys(t *testing.T) {
 	cfg := &config.Config{
 		Version:            1,
 		DefaultEnvironment: "dev",
-		IncludeAll:         boolPtr(true),
+		IncludeAll:         new(true),
 		Environments: map[string]config.Environment{
 			"dev": {Secret: "my-app/dev"},
 		},
@@ -165,7 +161,7 @@ func TestBuilder_Build_IncludeWithoutKey_RequiresIncludeAll(t *testing.T) {
 	cfg := &config.Config{
 		Version:            1,
 		DefaultEnvironment: "dev",
-		IncludeAll:         boolPtr(false),
+		IncludeAll:         new(false),
 		Environments: map[string]config.Environment{
 			"dev": {Secret: "my-app/dev"},
 		},
@@ -191,7 +187,7 @@ func TestBuilder_Build_WithOverrides(t *testing.T) {
 	cfg := &config.Config{
 		Version:            1,
 		DefaultEnvironment: "dev",
-		IncludeAll:         boolPtr(true),
+		IncludeAll:         new(true),
 		Environments: map[string]config.Environment{
 			"dev": {Secret: "my-app/dev"},
 		},
@@ -225,7 +221,7 @@ func TestBuilder_Build_CLIIncludeAllOverride(t *testing.T) {
 	cfg := &config.Config{
 		Version:            1,
 		DefaultEnvironment: "dev",
-		IncludeAll:         boolPtr(false), // Config says false
+		IncludeAll:         new(false), // Config says false
 		Environments: map[string]config.Environment{
 			"dev": {Secret: "my-app/dev"},
 		},
@@ -237,7 +233,7 @@ func TestBuilder_Build_CLIIncludeAllOverride(t *testing.T) {
 	}, nil)
 
 	builder := NewBuilder(mockClient, cfg, "", "dev").
-		WithIncludeAll(boolPtr(true)) // CLI override
+		WithIncludeAll(new(true)) // CLI override
 
 	entries, err := builder.Build(ctx, nil)
 
@@ -260,7 +256,7 @@ func TestBuilder_Build_ApplicationMode(t *testing.T) {
 				Environments: map[string]config.Environment{
 					"dev": {Secret: "api/dev"},
 				},
-				IncludeAll: boolPtr(true),
+				IncludeAll: new(true),
 			},
 		},
 	}
@@ -286,7 +282,7 @@ func TestBuilder_Build_ErrorFromSecretClient(t *testing.T) {
 	cfg := &config.Config{
 		Version:            1,
 		DefaultEnvironment: "dev",
-		IncludeAll:         boolPtr(true),
+		IncludeAll:         new(true),
 		Environments: map[string]config.Environment{
 			"dev": {Secret: "my-app/dev"},
 		},
