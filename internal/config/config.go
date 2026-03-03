@@ -34,7 +34,7 @@ type Config struct {
 	DefaultEnvironment string                  `yaml:"default_environment,omitempty"`
 	IncludeAll         *bool                   `yaml:"include_all,omitempty"`
 	AWS                *AWSConfig              `yaml:"aws,omitempty"`
-	OnePass            *OnePassConfig           `yaml:"1pass,omitempty"`
+	OnePass            *OnePassConfig          `yaml:"1pass,omitempty"`
 	Applications       map[string]*Application `yaml:"applications,omitempty"`
 	Environments       map[string]Environment  `yaml:"environments,omitempty"`
 	Include            []IncludeEntry          `yaml:"include,omitempty"`
