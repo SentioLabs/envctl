@@ -2,6 +2,35 @@
 
 All notable changes to envctl will be documented in this file.
 
+## [0.2.0](https://github.com/SentioLabs/envctl/compare/v0.1.1...v0.2.0) (2026-03-03)
+
+
+### Features
+
+* add 1Password as alternative secrets backend ([f523335](https://github.com/SentioLabs/envctl/commit/f5233352490c1c62aa070aca688aec84e3b0eb40))
+* add unit tests and remove CI/CD detection code ([09186ae](https://github.com/SentioLabs/envctl/commit/09186aea854054deb64ae36190ffa8a264a9dba2))
+* **cmd:** add self update command ([811a3d2](https://github.com/SentioLabs/envctl/commit/811a3d28b76604b500f9825859ab87d28f850bec))
+* **onepassword:** update JSON struct tags to omitzero for slice and struct-pointer fields ([3e5dc11](https://github.com/SentioLabs/envctl/commit/3e5dc119c7450bc03981ad2330aa67ce1988497f))
+* **release:** replace manual release workflow with release-please + GoReleaser ([9aa99f3](https://github.com/SentioLabs/envctl/commit/9aa99f3724007cab793bb4048a5a25c19b18238e))
+* **scripts:** add install script for self-update ([dbd5a1b](https://github.com/SentioLabs/envctl/commit/dbd5a1b7ed430f1a46224d250d81e5be5542ddf7))
+
+
+### Bug Fixes
+
+* lint issues in new test files ([226cde3](https://github.com/SentioLabs/envctl/commit/226cde3230e859a790034f6fc737c2a3c80d3fd7))
+* removing beads ([75dd453](https://github.com/SentioLabs/envctl/commit/75dd453268913c114425a748d399ba08dc2a680e))
+* removing beads p2 ([bb81068](https://github.com/SentioLabs/envctl/commit/bb810685beca3ce2b584366f7100451ede78bfdb))
+* resolve lint issues from Go 1.26 upgrade and golangci-lint v2 ([7678aeb](https://github.com/SentioLabs/envctl/commit/7678aebdbe41fa4eca329bd53315f8dd8de4985d))
+
+
+### Refactoring
+
+* **aws:** replace errors.As with errors.AsType for type-safe error handling ([d67e1a0](https://github.com/SentioLabs/envctl/commit/d67e1a03d85d02e5ec9ede1d2c6c548f52883972))
+* **env:** use t.Context() instead of context.Background() in tests ([5b1c56b](https://github.com/SentioLabs/envctl/commit/5b1c56b7c76f8d1a18334832c527b75c73b6557c))
+* replace custom contains() with slices.Contains and sort.Slice with slices.SortFunc ([bd58371](https://github.com/SentioLabs/envctl/commit/bd58371943047818ef294ed11b485565c7f1e883))
+* **runner:** replace isExitError helper with errors.AsType ([cc8bf7f](https://github.com/SentioLabs/envctl/commit/cc8bf7fc1483d76122cf943992447ce7b857a603))
+* **test:** replace boolPtr helpers with Go 1.26 new() builtin ([cd1334d](https://github.com/SentioLabs/envctl/commit/cd1334d3d9da885c39fb6125715c63365ac99815))
+
 ## [0.1.1] - 2026-01-16
 
 ### Features
@@ -97,5 +126,3 @@ This implements the full envctl CLI as specified in PRD.md:
 The tool enables developers to inject AWS Secrets Manager secrets
 into local development environments, either by running commands
 directly or generating .env files for Docker Compose.
-
-
