@@ -7,8 +7,10 @@ A lightweight CLI tool that enables developers to use a secrets manager as the s
 - [Supported Backends](#supported-backends)
 - [Features](#features)
 - [Installation](#installation)
+  - [Install Script](#install-script)
   - [From Source](#from-source)
   - [Build Locally](#build-locally)
+  - [Updating](#updating)
   - [Shell Completions](#shell-completions)
 - [Quick Start](#quick-start)
 - [Usage](#usage)
@@ -64,8 +66,17 @@ A lightweight CLI tool that enables developers to use a secrets manager as the s
 - **Biometric authentication** - 1Password backend supports Touch ID, Windows Hello, and other biometrics
 - **Docker Compose compatible** - Full support for `.env` file workflows
 - **Intelligent caching** - Secure local caching reduces API calls and improves performance (AWS backend)
+- **Self-updating** - Update to the latest version with `envctl self update`
 
 ## Installation
+
+### Install Script
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sentiolabs/envctl/main/scripts/install.sh | bash
+```
+
+This detects your platform (macOS/Linux, amd64/arm64) and installs the latest release to `/usr/local/bin` or `~/.local/bin`.
 
 ### From Source
 
@@ -81,6 +92,14 @@ cd envctl
 make build
 # Binary is at ./bin/envctl
 ```
+
+### Updating
+
+```bash
+envctl self update
+```
+
+This checks GitHub for the latest release and updates in place. Use `--check` to see if an update is available without installing.
 
 ### Shell Completions
 
@@ -810,6 +829,24 @@ envctl cache status
 
 # Clear all cached secrets
 envctl cache clear
+```
+
+#### `envctl self update`
+
+Update envctl to the latest version.
+
+```bash
+envctl self update [flags]
+
+Flags:
+  --check        Check for updates without installing
+  -f, --force    Force reinstall even if up-to-date
+  -y, --yes      Skip confirmation prompt
+
+Examples:
+  envctl self update          Update to latest version
+  envctl self update --check  Check if an update is available
+  envctl self update --force  Force reinstall
 ```
 
 ## Examples
