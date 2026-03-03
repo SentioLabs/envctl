@@ -9,47 +9,49 @@ version: 1
 default_environment: dev
 
 # ==============================================================================
-# Backend Selection (optional, defaults to "aws")
+# Global Backend Defaults (optional)
 # ==============================================================================
-# backend: aws        # Use AWS Secrets Manager (default)
-# backend: 1password  # Use 1Password
+# The presence of an 'aws' or '1pass' block determines the default backend.
+# Environment-level blocks override the global default.
+
+# AWS Secrets Manager (global defaults for all AWS environments):
+aws:
+  region: us-east-1
+  # profile: my-profile  # Optional: use specific AWS profile
+
+# 1Password (uncomment to use as global default instead of aws):
+# 1pass:
+#   vault: Development
+#   account: my-account  # Optional: for multi-account setups
 
 # ==============================================================================
-# AWS Secrets Manager Configuration (default)
+# Environments
 # ==============================================================================
-# Environment definitions
-# Each environment points to an AWS Secrets Manager secret
+# Each environment can override the global backend by specifying its own
+# 'aws' or '1pass' block. If neither is present, inherits the global default.
+
 environments:
   dev:
     secret: myapp/dev
-    # region: us-west-2   # Optional: override AWS region
-    # profile: my-profile # Optional: use specific AWS profile
+    # Inherits global aws backend (no override needed)
+
+  local:
+    secret: My App Local Secrets
+    1pass:                       # Override: use 1Password for local dev
+      vault: Development
 
   staging:
     secret: myapp/staging
+    aws:                         # Explicit AWS with custom region
+      region: us-west-2
+      profile: staging
 
   prod:
     secret: myapp/prod
+    # Inherits global aws backend
 
 # ==============================================================================
-# 1Password Configuration (uncomment to use)
-# ==============================================================================
-# backend: 1password
-#
-# onepassword:
-#   vault: Development  # Default vault name
-#   # account: my-account # Optional: for multi-account setups
-#
-# environments:
-#   dev:
-#     secret: My App Dev Secrets  # 1Password item name
-#   staging:
-#     secret: My App Staging Secrets
-#   prod:
-#     secret: My App Prod Secrets
-
-# ==============================================================================
-# Common Configuration (works with both backends)
+# Common Configuration (works with all backends)
 # ==============================================================================
 
 # Optional: Include all keys from primary secret (default: false)
