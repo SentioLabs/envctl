@@ -293,6 +293,177 @@ func findSubstring(s, substr string) bool {
 	return false
 }
 
+func TestResolveBackend(t *testing.T) {
+	tests := []struct {
+		name   string
+		config *Config
+		env    *Environment
+		want   string
+	}{
+		{
+			name:   "env 1pass overrides global aws",
+			config: &Config{Version: 1, AWS: &AWSConfig{Region: "us-east-1"}},
+			env:    &Environment{Secret: "test", OnePass: &OnePassConfig{Vault: "Dev"}},
+			want:   Backend1Pass,
+		},
+		{
+			name:   "env aws explicit",
+			config: &Config{Version: 1},
+			env:    &Environment{Secret: "test", AWS: &AWSConfig{Region: "eu-west-1"}},
+			want:   BackendAWS,
+		},
+		{
+			name:   "inherit global 1pass",
+			config: &Config{Version: 1, OnePass: &OnePassConfig{Vault: "Dev"}},
+			env:    &Environment{Secret: "test"},
+			want:   Backend1Pass,
+		},
+		{
+			name:   "inherit global aws",
+			config: &Config{Version: 1, AWS: &AWSConfig{Region: "us-east-1"}},
+			env:    &Environment{Secret: "test"},
+			want:   BackendAWS,
+		},
+		{
+			name:   "default to aws when nothing set",
+			config: &Config{Version: 1},
+			env:    &Environment{Secret: "test"},
+			want:   BackendAWS,
+		},
+		{
+			name:   "nil env falls back to global",
+			config: &Config{Version: 1, OnePass: &OnePassConfig{Vault: "Dev"}},
+			env:    nil,
+			want:   Backend1Pass,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.config.ResolveBackend(tt.env)
+			if got != tt.want {
+				t.Errorf("ResolveBackend() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveAWSConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *Config
+		env         *Environment
+		wantRegion  string
+		wantProfile string
+	}{
+		{
+			name:        "global only",
+			config:      &Config{Version: 1, AWS: &AWSConfig{Region: "us-east-1", Profile: "default"}},
+			env:         &Environment{Secret: "test"},
+			wantRegion:  "us-east-1",
+			wantProfile: "default",
+		},
+		{
+			name:        "env only",
+			config:      &Config{Version: 1},
+			env:         &Environment{Secret: "test", AWS: &AWSConfig{Region: "eu-west-1"}},
+			wantRegion:  "eu-west-1",
+			wantProfile: "",
+		},
+		{
+			name:        "env overrides global region",
+			config:      &Config{Version: 1, AWS: &AWSConfig{Region: "us-east-1", Profile: "default"}},
+			env:         &Environment{Secret: "test", AWS: &AWSConfig{Region: "eu-west-1"}},
+			wantRegion:  "eu-west-1",
+			wantProfile: "default",
+		},
+		{
+			name:        "neither set",
+			config:      &Config{Version: 1},
+			env:         &Environment{Secret: "test"},
+			wantRegion:  "",
+			wantProfile: "",
+		},
+		{
+			name:        "nil env",
+			config:      &Config{Version: 1, AWS: &AWSConfig{Region: "us-east-1"}},
+			env:         nil,
+			wantRegion:  "us-east-1",
+			wantProfile: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.config.ResolveAWSConfig(tt.env)
+			if got.Region != tt.wantRegion {
+				t.Errorf("ResolveAWSConfig().Region = %q, want %q", got.Region, tt.wantRegion)
+			}
+			if got.Profile != tt.wantProfile {
+				t.Errorf("ResolveAWSConfig().Profile = %q, want %q", got.Profile, tt.wantProfile)
+			}
+		})
+	}
+}
+
+func TestResolveOnePassConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *Config
+		env         *Environment
+		wantVault   string
+		wantAccount string
+	}{
+		{
+			name:        "global only",
+			config:      &Config{Version: 1, OnePass: &OnePassConfig{Vault: "Dev", Account: "my-account"}},
+			env:         &Environment{Secret: "test"},
+			wantVault:   "Dev",
+			wantAccount: "my-account",
+		},
+		{
+			name:        "env only",
+			config:      &Config{Version: 1},
+			env:         &Environment{Secret: "test", OnePass: &OnePassConfig{Vault: "Staging"}},
+			wantVault:   "Staging",
+			wantAccount: "",
+		},
+		{
+			name:        "env overrides global vault",
+			config:      &Config{Version: 1, OnePass: &OnePassConfig{Vault: "Dev", Account: "my-account"}},
+			env:         &Environment{Secret: "test", OnePass: &OnePassConfig{Vault: "Staging"}},
+			wantVault:   "Staging",
+			wantAccount: "my-account",
+		},
+		{
+			name:        "neither set",
+			config:      &Config{Version: 1},
+			env:         &Environment{Secret: "test"},
+			wantVault:   "",
+			wantAccount: "",
+		},
+		{
+			name:        "nil env",
+			config:      &Config{Version: 1, OnePass: &OnePassConfig{Vault: "Dev", Account: "my-account"}},
+			env:         nil,
+			wantVault:   "Dev",
+			wantAccount: "my-account",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.config.ResolveOnePassConfig(tt.env)
+			if got.Vault != tt.wantVault {
+				t.Errorf("ResolveOnePassConfig().Vault = %q, want %q", got.Vault, tt.wantVault)
+			}
+			if got.Account != tt.wantAccount {
+				t.Errorf("ResolveOnePassConfig().Account = %q, want %q", got.Account, tt.wantAccount)
+			}
+		})
+	}
+}
+
 func TestShouldIncludeAll(t *testing.T) {
 	tests := []struct {
 		name       string

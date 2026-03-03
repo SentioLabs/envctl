@@ -354,6 +354,60 @@ func (c *Config) CacheBackend() string {
 	return c.Cache.Backend
 }
 
+// ResolveBackend determines the backend for a given environment.
+// Precedence: environment block > global block > default (aws).
+func (c *Config) ResolveBackend(env *Environment) string {
+	if env != nil {
+		if env.OnePass != nil {
+			return Backend1Pass
+		}
+		if env.AWS != nil {
+			return BackendAWS
+		}
+	}
+	if c.OnePass != nil {
+		return Backend1Pass
+	}
+	if c.AWS != nil {
+		return BackendAWS
+	}
+	return BackendAWS
+}
+
+// ResolveAWSConfig merges global and environment-level AWS config.
+func (c *Config) ResolveAWSConfig(env *Environment) AWSConfig {
+	result := AWSConfig{}
+	if c.AWS != nil {
+		result = *c.AWS
+	}
+	if env != nil && env.AWS != nil {
+		if env.AWS.Region != "" {
+			result.Region = env.AWS.Region
+		}
+		if env.AWS.Profile != "" {
+			result.Profile = env.AWS.Profile
+		}
+	}
+	return result
+}
+
+// ResolveOnePassConfig merges global and environment-level 1Pass config.
+func (c *Config) ResolveOnePassConfig(env *Environment) OnePassConfig {
+	result := OnePassConfig{}
+	if c.OnePass != nil {
+		result = *c.OnePass
+	}
+	if env != nil && env.OnePass != nil {
+		if env.OnePass.Vault != "" {
+			result.Vault = env.OnePass.Vault
+		}
+		if env.OnePass.Account != "" {
+			result.Account = env.OnePass.Account
+		}
+	}
+	return result
+}
+
 // ShouldIncludeAll resolves include_all setting with precedence: env > app > global.
 // Returns false by default (mappings-only mode).
 func (c *Config) ShouldIncludeAll(app *Application, env *Environment) bool {
