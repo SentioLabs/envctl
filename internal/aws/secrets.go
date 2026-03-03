@@ -176,17 +176,16 @@ func (c *SecretsClient) GetSecretKey(ctx context.Context, secretName, key string
 
 // isNonRetryableError checks if an error should not be retried.
 func isNonRetryableError(err error) bool {
-	var notFound *types.ResourceNotFoundException
-	var invalid *types.InvalidParameterException
-	var invalidReq *types.InvalidRequestException
-
-	if stderrors.As(err, &notFound) ||
-		stderrors.As(err, &invalid) ||
-		stderrors.As(err, &invalidReq) {
+	if _, ok := stderrors.AsType[*types.ResourceNotFoundException](err); ok {
+		return true
+	}
+	if _, ok := stderrors.AsType[*types.InvalidParameterException](err); ok {
+		return true
+	}
+	if _, ok := stderrors.AsType[*types.InvalidRequestException](err); ok {
 		return true
 	}
 
-	// Check for access denied via smithy API error
 	if isAccessDenied(err) {
 		return true
 	}
@@ -196,8 +195,7 @@ func isNonRetryableError(err error) bool {
 
 // isAccessDenied checks if an error is an access denied error.
 func isAccessDenied(err error) bool {
-	var apiErr smithy.APIError
-	if stderrors.As(err, &apiErr) {
+	if apiErr, ok := stderrors.AsType[smithy.APIError](err); ok {
 		code := apiErr.ErrorCode()
 		return code == "AccessDeniedException" ||
 			code == "UnauthorizedAccess" ||
@@ -213,8 +211,7 @@ func (c *SecretsClient) Name() string {
 
 // mapAWSError converts AWS errors to user-friendly error types.
 func mapAWSError(secretName string, err error) error {
-	var notFound *types.ResourceNotFoundException
-	if stderrors.As(err, &notFound) {
+	if _, ok := stderrors.AsType[*types.ResourceNotFoundException](err); ok {
 		return &errors.SecretNotFoundError{SecretName: secretName}
 	}
 
