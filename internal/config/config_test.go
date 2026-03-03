@@ -234,10 +234,6 @@ func findSubstring(s, substr string) bool {
 	return false
 }
 
-func boolPtr(b bool) *bool {
-	return &b
-}
-
 func TestShouldIncludeAll(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -253,57 +249,57 @@ func TestShouldIncludeAll(t *testing.T) {
 		},
 		{
 			name:       "global_true",
-			config:     &Config{Version: 1, IncludeAll: boolPtr(true)},
+			config:     &Config{Version: 1, IncludeAll: new(true)},
 			wantResult: true,
 		},
 		{
 			name:       "global_false_explicit",
-			config:     &Config{Version: 1, IncludeAll: boolPtr(false)},
+			config:     &Config{Version: 1, IncludeAll: new(false)},
 			wantResult: false,
 		},
 		{
 			name:       "app_overrides_global_true",
-			config:     &Config{Version: 1, IncludeAll: boolPtr(false)},
-			app:        &Application{IncludeAll: boolPtr(true)},
+			config:     &Config{Version: 1, IncludeAll: new(false)},
+			app:        &Application{IncludeAll: new(true)},
 			wantResult: true,
 		},
 		{
 			name:       "app_overrides_global_false",
-			config:     &Config{Version: 1, IncludeAll: boolPtr(true)},
-			app:        &Application{IncludeAll: boolPtr(false)},
+			config:     &Config{Version: 1, IncludeAll: new(true)},
+			app:        &Application{IncludeAll: new(false)},
 			wantResult: false,
 		},
 		{
 			name:       "env_overrides_app_true",
-			config:     &Config{Version: 1, IncludeAll: boolPtr(false)},
-			app:        &Application{IncludeAll: boolPtr(false)},
-			env:        &Environment{Secret: "test", IncludeAll: boolPtr(true)},
+			config:     &Config{Version: 1, IncludeAll: new(false)},
+			app:        &Application{IncludeAll: new(false)},
+			env:        &Environment{Secret: "test", IncludeAll: new(true)},
 			wantResult: true,
 		},
 		{
 			name:       "env_overrides_app_false",
-			config:     &Config{Version: 1, IncludeAll: boolPtr(true)},
-			app:        &Application{IncludeAll: boolPtr(true)},
-			env:        &Environment{Secret: "test", IncludeAll: boolPtr(false)},
+			config:     &Config{Version: 1, IncludeAll: new(true)},
+			app:        &Application{IncludeAll: new(true)},
+			env:        &Environment{Secret: "test", IncludeAll: new(false)},
 			wantResult: false,
 		},
 		{
 			name:       "env_overrides_global_no_app",
-			config:     &Config{Version: 1, IncludeAll: boolPtr(false)},
-			env:        &Environment{Secret: "test", IncludeAll: boolPtr(true)},
+			config:     &Config{Version: 1, IncludeAll: new(false)},
+			env:        &Environment{Secret: "test", IncludeAll: new(true)},
 			wantResult: true,
 		},
 		{
 			name:       "app_nil_inherits_global",
-			config:     &Config{Version: 1, IncludeAll: boolPtr(true)},
+			config:     &Config{Version: 1, IncludeAll: new(true)},
 			app:        nil,
 			env:        &Environment{Secret: "test"},
 			wantResult: true,
 		},
 		{
 			name:       "env_nil_inherits_app",
-			config:     &Config{Version: 1, IncludeAll: boolPtr(false)},
-			app:        &Application{IncludeAll: boolPtr(true)},
+			config:     &Config{Version: 1, IncludeAll: new(false)},
+			app:        &Application{IncludeAll: new(true)},
 			env:        nil,
 			wantResult: true,
 		},
