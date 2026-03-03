@@ -11,7 +11,7 @@ type Item struct {
 	Category string    `json:"category"`
 	Vault    VaultRef  `json:"vault"`
 	Fields   []Field   `json:"fields"`
-	Sections []Section `json:"sections,omitempty"`
+	Sections []Section `json:"sections,omitzero"`
 }
 
 // VaultRef is a reference to a vault.
@@ -37,7 +37,7 @@ type Field struct {
 	Section   *struct {
 		ID    string `json:"id"`
 		Label string `json:"label,omitempty"`
-	} `json:"section,omitempty"`
+	} `json:"section,omitzero"`
 }
 
 // FieldFilter defines which fields to include when extracting key-value pairs.
