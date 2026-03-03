@@ -2,6 +2,16 @@
 
 All notable changes to envctl will be documented in this file.
 
+## [0.3.0](https://github.com/SentioLabs/envctl/compare/v0.2.0...v0.3.0) (2026-03-03)
+
+
+### Features
+
+* **cmd:** wire per-environment backend resolution into CLI commands ([8ada2fc](https://github.com/SentioLabs/envctl/commit/8ada2fcdb6c9a95486ac750f70afb60a9c936659))
+* **config:** add backend resolution methods to Config ([40d928c](https://github.com/SentioLabs/envctl/commit/40d928c6884f4b01355525c06c2bea4802a22b90))
+* **config:** restructure types for per-environment backend selection ([82fc851](https://github.com/SentioLabs/envctl/commit/82fc8516ca0d12eaf570cd22bb96faf187bbd723))
+* **secrets:** update factory to use per-environment backend resolution ([77b2d0d](https://github.com/SentioLabs/envctl/commit/77b2d0daf73bc8b49bd7d948069832c763a6de80))
+
 ## [0.2.0](https://github.com/SentioLabs/envctl/compare/v0.1.1...v0.2.0) (2026-03-03)
 
 
