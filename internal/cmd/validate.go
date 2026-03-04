@@ -39,7 +39,7 @@ func init() {
 // creates secrets client, and tests access to all referenced secrets.
 // The fmt.Fprintf/Fprintln calls output status to stdout and always succeed.
 //
-//nolint:gocognit,revive // Validation requires checking multiple conditions; stdout writes always succeed
+//nolint:revive // Validation requires checking multiple conditions; stdout writes always succeed
 func runValidate(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
@@ -82,74 +82,49 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// Determine include_all mode from flag override or config
 	includeAllOverride := getIncludeAllOverride(cmd)
-	var includeAll bool
+	var includeAllEnabled bool
 	if includeAllOverride != nil {
-		includeAll = *includeAllOverride
+		includeAllEnabled = *includeAllOverride
 	} else {
-		includeAll = cfg.ShouldIncludeAll(app, envConfig)
+		includeAllEnabled = cfg.ShouldIncludeAll(app, envConfig)
 	}
 
-	//nolint:nestif // Validation messages require nested checks for context
-	if includeAll {
-		fmt.Fprintln(os.Stdout, "✓ Mode: include_all (all keys from primary secret)")
+	if includeAllEnabled {
+		fmt.Fprintln(os.Stdout, "✓ Mode: include_all (all keys from sources)")
 	} else {
 		fmt.Fprintln(os.Stdout, "✓ Mode: mappings-only (explicit keys only)")
 
-		// Warn if no mappings or specific includes defined
+		// Warn if no mappings or specific sources defined
 		totalMappings := len(cfg.Mapping)
 		if app != nil {
 			totalMappings += len(app.Mapping)
 		}
-		specificIncludes := countSpecificIncludesMap(cfg.Include)
-		if app != nil {
-			specificIncludes += countSpecificIncludesMap(app.Include)
-		}
+		specificSources := countSpecificSources(envConfig.Sources)
 
-		if totalMappings == 0 && specificIncludes == 0 {
-			fmt.Fprintln(os.Stderr, "⚠ Warning: no mappings or specific includes defined")
+		if totalMappings == 0 && specificSources == 0 {
+			fmt.Fprintln(os.Stderr, "⚠ Warning: no mappings or specific sources defined")
 			fmt.Fprintln(os.Stderr, "  No environment variables will be injected")
 			fmt.Fprintln(os.Stderr, "  Add mappings or set include_all: true in config")
 		}
 
-		// Check for include entries without key
-		hasWildcardIncludes := hasIncludeAllEntriesMap(cfg.Include)
-		if app != nil && !hasWildcardIncludes {
-			hasWildcardIncludes = hasIncludeAllEntriesMap(app.Include)
-		}
-		if hasWildcardIncludes {
-			fmt.Fprintln(os.Stderr, "⚠ Warning: include entries without 'key' will fail")
-			fmt.Fprintln(os.Stderr, "  In mappings-only mode, includes must specify a key")
-			fmt.Fprintln(os.Stderr, "  Add 'key' to include entries or set include_all: true")
+		// Check for source entries without key
+		if hasWildcardSources(envConfig.Sources) {
+			fmt.Fprintln(os.Stderr, "⚠ Warning: source entries without 'key' will fail")
+			fmt.Fprintln(os.Stderr, "  In mappings-only mode, sources must specify a key")
+			fmt.Fprintln(os.Stderr, "  Add 'key' to source entries or set include_all: true")
 		}
 	}
 
-	// Create secrets client
+	// Create primary secrets client from first source
 	client, err := createSecretsClient(ctx, cfg, envConfig)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(os.Stdout, "✓ Backend: %s (authenticated)\n", client.Name())
 
-	// Test primary secret
+	// Test all sources from the resolved environment
 	totalKeys := 0
-	secrets, err := client.GetSecret(ctx, envConfig.Secret)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(os.Stdout, "✓ Secret '%s': accessible (%d keys)\n", envConfig.Secret, len(secrets))
-	totalKeys += len(secrets)
-
-	// Test global include secrets
-	for envKey, includes := range cfg.Include {
-		totalKeys += validateIncludes(ctx, client, includes, "global/"+envKey)
-	}
-
-	// Test app-level include secrets
-	if app != nil {
-		for envKey, includes := range app.Include {
-			totalKeys += validateIncludes(ctx, client, includes, "app/"+envKey)
-		}
-	}
+	totalKeys += validateSources(ctx, cfg, client, envConfig.Sources, selectedEnv)
 
 	// Test global mapping references
 	if len(cfg.Mapping) > 0 {
@@ -173,38 +148,86 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// validateIncludes tests include secrets and returns count of keys.
+// validateSources tests source secrets and returns count of keys.
 //
 //nolint:revive // CLI output to stdout always succeeds
-func validateIncludes(
+func validateSources(
 	ctx context.Context,
-	client secrets.Client,
-	includes []config.IncludeEntry,
+	cfg *config.Config,
+	primaryClient secrets.Client,
+	sources []config.IncludeEntry,
 	scope string,
 ) int {
 	totalKeys := 0
-	for _, inc := range includes {
-		if inc.Key != "" {
+	for _, src := range sources {
+		client, err := clientForValidate(ctx, cfg, primaryClient, src)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "✗ Source (%s) '%s': failed to create client: %v\n", scope, src.Secret, err)
+			continue
+		}
+
+		switch {
+		case src.Key != "":
 			// Test specific key access
-			_, err := client.GetSecretKey(ctx, inc.Secret, inc.Key)
+			_, err := client.GetSecretKey(ctx, src.Secret, src.Key)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "✗ Include (%s) '%s#%s': %v\n", scope, inc.Secret, inc.Key, err)
+				fmt.Fprintf(os.Stderr, "✗ Source (%s) '%s#%s': %v\n", scope, src.Secret, src.Key, err)
 				continue
 			}
-			fmt.Fprintf(os.Stdout, "✓ Include (%s) '%s#%s': accessible\n", scope, inc.Secret, inc.Key)
+			fmt.Fprintf(os.Stdout, "✓ Source (%s) '%s#%s': accessible\n", scope, src.Secret, src.Key)
 			totalKeys++
-		} else {
+		case len(src.Keys) > 0:
+			// Test multiple specific keys from same secret
+			for _, km := range src.Keys {
+				_, err := client.GetSecretKey(ctx, src.Secret, km.Key)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "✗ Source (%s) '%s#%s': %v\n", scope, src.Secret, km.Key, err)
+					continue
+				}
+				name := km.Key
+				if km.As != "" {
+					name = km.As
+				}
+				fmt.Fprintf(os.Stdout, "✓ Source (%s) '%s#%s' as %s: accessible\n", scope, src.Secret, km.Key, name)
+				totalKeys++
+			}
+		default:
 			// Test full secret access
-			incSecrets, err := client.GetSecret(ctx, inc.Secret)
+			srcSecrets, err := client.GetSecret(ctx, src.Secret)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "✗ Include (%s) '%s': %v\n", scope, inc.Secret, err)
+				fmt.Fprintf(os.Stderr, "✗ Source (%s) '%s': %v\n", scope, src.Secret, err)
 				continue
 			}
-			fmt.Fprintf(os.Stdout, "✓ Include (%s) '%s': accessible (%d keys)\n", scope, inc.Secret, len(incSecrets))
-			totalKeys += len(incSecrets)
+			fmt.Fprintf(os.Stdout, "✓ Source (%s) '%s': accessible (%d keys)\n", scope, src.Secret, len(srcSecrets))
+			totalKeys += len(srcSecrets)
 		}
 	}
 	return totalKeys
+}
+
+// clientForValidate returns the appropriate secrets client for a source entry.
+// If the source has a backend qualifier (aws: or 1pass:) different from the primary,
+// a new client is created for that backend.
+func clientForValidate(
+	ctx context.Context,
+	cfg *config.Config,
+	primaryClient secrets.Client,
+	src config.IncludeEntry,
+) (secrets.Client, error) {
+	// No backend qualifier — use primary client
+	if src.AWS == nil && src.OnePass == nil {
+		return primaryClient, nil
+	}
+
+	// Build a synthetic environment from the source's backend config
+	syntheticEnv := config.NewEnvironment(src)
+
+	return secrets.NewClient(ctx, secrets.Options{
+		Config:  cfg,
+		Env:     &syntheticEnv,
+		NoCache: noCache,
+		Refresh: refresh,
+	})
 }
 
 // validateMapping tests mapping entries.
@@ -227,26 +250,24 @@ func validateMapping(
 	return nil
 }
 
-// countSpecificIncludesMap counts include entries that specify a key across all environments.
-func countSpecificIncludesMap(includes map[string][]config.IncludeEntry) int {
+// countSpecificSources counts source entries that specify a key (or keys).
+func countSpecificSources(sources []config.IncludeEntry) int {
 	count := 0
-	for _, entries := range includes {
-		for _, inc := range entries {
-			if inc.Key != "" {
-				count++
-			}
+	for _, src := range sources {
+		if src.Key != "" {
+			count++
+		} else if len(src.Keys) > 0 {
+			count += len(src.Keys)
 		}
 	}
 	return count
 }
 
-// hasIncludeAllEntriesMap checks if any include entry doesn't specify a key across all environments.
-func hasIncludeAllEntriesMap(includes map[string][]config.IncludeEntry) bool {
-	for _, entries := range includes {
-		for _, inc := range entries {
-			if inc.Key == "" {
-				return true
-			}
+// hasWildcardSources checks if any source entry doesn't specify a key or keys.
+func hasWildcardSources(sources []config.IncludeEntry) bool {
+	for _, src := range sources {
+		if src.Key == "" && len(src.Keys) == 0 {
+			return true
 		}
 	}
 	return false

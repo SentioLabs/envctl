@@ -339,19 +339,33 @@ environments:
   prod:
     secret: myapp/prod
 
-# Include additional secrets (merged into all environments)
+# Include additional secrets (scoped per environment)
 include:
-  # Pull specific key and rename it
-  - secret: shared/stripe
-    key: test_key
-    as: STRIPE_SECRET_KEY
+  dev:
+    # Pull specific key and rename it
+    - secret: shared/stripe
+      key: test_key
+      as: STRIPE_SECRET_KEY
 
-  # Pull specific key, keep original name
-  - secret: shared/sendgrid
-    key: API_KEY
+    # Pull specific key, keep original name
+    - secret: shared/sendgrid
+      key: API_KEY
 
-  # Pull all keys from a shared secret (requires include_all: true)
-  - secret: shared/datadog
+    # Pull all keys from a shared secret (requires include_all: true)
+    - secret: shared/datadog
+
+    # Cross-backend: pull from AWS while primary backend is 1Password
+    - secret: shared/datadog
+      key: api_key
+      as: DD_API_KEY
+      aws:
+        region: us-east-1
+
+  staging:
+    - secret: shared/stripe
+      key: live_key
+      as: STRIPE_SECRET_KEY
+    - secret: shared/datadog
 
 # Explicit mappings (highest precedence)
 mapping:
@@ -390,15 +404,21 @@ applications:
       secret: dev/myorg/worker/app-secrets
     staging:
       secret: staging/myorg/worker/app-secrets
-    # App-level includes and mappings
+    # App-level includes (scoped per environment)
     include:
-      - secret: shared/worker-specific
+      dev:
+        - secret: shared/worker-specific
+      staging:
+        - secret: shared/worker-specific
     mapping:
       WORKER_QUEUE: shared/queues#worker_url
 
-# Global includes (apply to all applications)
+# Global includes (apply to all applications, scoped per environment)
 include:
-  - secret: shared/datadog
+  dev:
+    - secret: shared/datadog
+  staging:
+    - secret: shared/datadog
 
 # Global mappings (apply to all applications)
 mapping:
@@ -420,8 +440,9 @@ envctl validate -a core-api
 ```
 
 When using applications:
-- Global `include` and `mapping` entries apply to all applications
-- App-level `include` and `mapping` override globals
+- Global `include` entries for the active environment apply to all applications
+- App-level `include` entries for the active environment override globals
+- `mapping` entries apply to all environments
 - Both `--app/-a` and `--env/-e` flags support shell completion
 
 ### Mappings-Only Mode (Default)
@@ -452,16 +473,16 @@ envctl run --include-all -- make dev
 When resolving environment variables, sources are applied in this order (later wins):
 
 **Default (mappings-only mode):**
-1. Global `include` entries with specific keys
-2. App-level `include` entries with specific keys
+1. Global `include` entries for the active environment (with specific keys)
+2. App-level `include` entries for the active environment (with specific keys)
 3. Global `mapping` entries
 4. App-level `mapping` entries
 5. Command-line overrides (`--set KEY=VALUE`)
 
 **With `include_all: true`:**
 1. Primary `secret` for the environment (all keys)
-2. Global `include` entries (in order specified)
-3. App-level `include` entries (in order specified)
+2. Global `include` entries for the active environment (in order specified)
+3. App-level `include` entries for the active environment (in order specified)
 4. Global `mapping` entries
 5. App-level `mapping` entries
 6. Command-line overrides (`--set KEY=VALUE`)
@@ -488,9 +509,10 @@ Plain text secrets are exposed as a single key named `_value`. Use the `as` fiel
 
 ```yaml
 include:
-  - secret: myapp/redis-password
-    key: _value
-    as: REDIS_PASSWORD
+  dev:
+    - secret: myapp/redis-password
+      key: _value
+      as: REDIS_PASSWORD
 ```
 
 ### Secret Reference Syntax
@@ -861,7 +883,8 @@ environments:
   dev:
     secret: monorepo/api/dev
 include:
-  - secret: monorepo/shared/dev
+  dev:
+    - secret: monorepo/shared/dev
 ```
 
 ```yaml
@@ -872,7 +895,8 @@ environments:
   dev:
     secret: monorepo/worker/dev
 include:
-  - secret: monorepo/shared/dev
+  dev:
+    - secret: monorepo/shared/dev
 ```
 
 ### direnv Integration

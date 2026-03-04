@@ -4,8 +4,6 @@ import (
 	"context"
 	"os"
 
-	"github.com/sentiolabs/envctl/internal/config"
-	"github.com/sentiolabs/envctl/internal/env"
 	"github.com/sentiolabs/envctl/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -35,47 +33,15 @@ func init() {
 func runEnv(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	// Load config
-	configPath := configFile
-	if configPath == "" {
-		var err error
-		configPath, err = config.FindConfig()
-		if err != nil {
-			return err
-		}
-	}
-	verboseLog("Using config: %s", configPath)
-
-	cfg, err := config.Load(configPath)
+	entries, cfg, err := loadAndBuild(ctx, cmd, nil)
 	if err != nil {
 		return err
 	}
 
-	// Resolve environment config
-	envConfig, _, err := resolveEnvironmentConfig(cfg)
-	if err != nil {
-		return err
-	}
 	selectedEnv := envName
 	if selectedEnv == "" {
 		selectedEnv = cfg.DefaultEnvironment
 	}
-	verboseLog("Using environment: %s (secret: %s)", selectedEnv, envConfig.Secret)
-
-	// Create secrets client with caching
-	client, err := createSecretsClient(ctx, cfg, envConfig)
-	if err != nil {
-		return err
-	}
-
-	// Build environment
-	builder := env.NewBuilder(client, cfg, appName, envName).
-		WithIncludeAll(getIncludeAllOverride(cmd))
-	entries, err := builder.Build(ctx, nil)
-	if err != nil {
-		return err
-	}
-	verboseLog("Loaded %d environment variables", len(entries))
 
 	// Determine output destination
 	var w *os.File

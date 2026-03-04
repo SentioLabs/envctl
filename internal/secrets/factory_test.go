@@ -14,13 +14,14 @@ const (
 
 func TestOptionsStruct(t *testing.T) {
 	t.Run("has Env field and no Region/Profile fields", func(t *testing.T) {
-		env := &config.Environment{
+		e := config.NewEnvironment(config.IncludeEntry{
 			Secret: "test/secret",
 			AWS: &config.AWSConfig{
 				Region:  "us-east-1",
 				Profile: "myprofile",
 			},
-		}
+		})
+		env := &e
 
 		opts := secrets.Options{
 			Config:  &config.Config{Version: 1},
@@ -77,10 +78,11 @@ func TestNewClientDefaultsToAWS(t *testing.T) {
 	})
 
 	t.Run("when env has aws config", func(t *testing.T) {
-		env := &config.Environment{
+		e := config.NewEnvironment(config.IncludeEntry{
 			Secret: "test/secret",
 			AWS:    &config.AWSConfig{Region: "eu-west-1"},
-		}
+		})
+		env := &e
 		cfg := &config.Config{Version: 1}
 
 		opts := secrets.Options{
@@ -101,13 +103,14 @@ func TestNewClientDefaultsToAWS(t *testing.T) {
 
 func TestNewClientRoutesTo1Password(t *testing.T) {
 	t.Run("when env has 1pass config", func(t *testing.T) {
-		env := &config.Environment{
+		e := config.NewEnvironment(config.IncludeEntry{
 			Secret: "test/secret",
 			OnePass: &config.OnePassConfig{
 				Vault:   "TestVault",
 				Account: "test.1password.com",
 			},
-		}
+		})
+		env := &e
 		cfg := &config.Config{Version: 1}
 
 		opts := secrets.Options{
@@ -147,10 +150,11 @@ func TestNewClientRoutesTo1Password(t *testing.T) {
 	})
 
 	t.Run("env-level 1pass overrides global AWS", func(t *testing.T) {
-		env := &config.Environment{
+		e := config.NewEnvironment(config.IncludeEntry{
 			Secret:  "test/secret",
 			OnePass: &config.OnePassConfig{Vault: "EnvVault"},
-		}
+		})
+		env := &e
 		cfg := &config.Config{
 			Version: 1,
 			AWS:     &config.AWSConfig{Region: "us-west-2"},

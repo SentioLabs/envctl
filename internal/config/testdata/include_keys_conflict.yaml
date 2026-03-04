@@ -1,0 +1,10 @@
+version: 1
+default_environment: dev
+
+environments:
+  dev:
+    - secret: dev/secrets
+    - secret: other/secret
+      key: single_key
+      keys:
+        - key: multi_key

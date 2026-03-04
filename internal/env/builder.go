@@ -9,13 +9,6 @@ import (
 	"github.com/sentiolabs/envctl/internal/secrets"
 )
 
-// ClientFactory creates a secrets client for a given backend type.
-// It receives the backend name and optional backend-specific configs.
-type ClientFactory func(
-	ctx context.Context, backend string,
-	awsCfg *config.AWSConfig, opCfg *config.OnePassConfig,
-) (secrets.Client, error)
-
 // Entry represents a resolved environment variable with its source.
 type Entry struct {
 	Key    string
@@ -23,27 +16,35 @@ type Entry struct {
 	Source string
 }
 
+// BuilderOptions configures optional builder behavior for cross-backend includes.
+type BuilderOptions struct {
+	NoCache bool
+	Refresh bool
+}
+
 // Builder builds environment variables from configuration.
 type Builder struct {
-	secrets       secrets.Client
-	config        *config.Config
-	appName       string
-	envName       string
-	app           *config.Application // Resolved application (nil in legacy mode)
-	env           *config.Environment // Resolved environment
-	includeAll    *bool               // CLI override for include_all setting
-	clientFactory ClientFactory       // Factory for creating cross-backend clients
-	activeBackend string              // Backend type of the primary client
+	secrets    secrets.Client
+	config     *config.Config
+	appName    string
+	envName    string
+	app        *config.Application // Resolved application (nil in legacy mode)
+	env        *config.Environment // Resolved environment
+	includeAll *bool               // CLI override for include_all setting
+	noCache    bool
+	refresh    bool
+	newClient  func(ctx context.Context, opts secrets.Options) (secrets.Client, error)
 }
 
 // NewBuilder creates a new environment builder.
 // appName can be empty for legacy (non-application) configs.
 func NewBuilder(client secrets.Client, cfg *config.Config, appName, envName string) *Builder {
 	return &Builder{
-		secrets: client,
-		config:  cfg,
-		appName: appName,
-		envName: envName,
+		secrets:   client,
+		config:    cfg,
+		appName:   appName,
+		envName:   envName,
+		newClient: secrets.NewClient,
 	}
 }
 
@@ -54,11 +55,11 @@ func (b *Builder) WithIncludeAll(val *bool) *Builder {
 	return b
 }
 
-// WithClientFactory sets the client factory and active backend for cross-backend includes.
+// WithOptions sets cross-backend client options (noCache, refresh).
 // Returns the builder for method chaining.
-func (b *Builder) WithClientFactory(factory ClientFactory, activeBackend string) *Builder {
-	b.clientFactory = factory
-	b.activeBackend = activeBackend
+func (b *Builder) WithOptions(opts BuilderOptions) *Builder {
+	b.noCache = opts.NoCache
+	b.refresh = opts.Refresh
 	return b
 }
 
@@ -72,10 +73,8 @@ func (b *Builder) shouldIncludeAll() bool {
 }
 
 // Build resolves all environment variables according to precedence rules.
-// Default (mappings-only): includes (specific) -> mappings -> overrides
-// With include_all: primary secret -> includes -> mappings -> overrides
-//
-//nolint:revive // Build orchestrates multiple resolution steps sequentially
+// Sources are processed in order (later sources override earlier ones),
+// then mappings, then overrides.
 func (b *Builder) Build(ctx context.Context, overrides map[string]string) ([]Entry, error) {
 	entries := make(map[string]Entry)
 
@@ -86,50 +85,35 @@ func (b *Builder) Build(ctx context.Context, overrides map[string]string) ([]Ent
 
 	includeAll := b.shouldIncludeAll()
 
-	// 1. Load primary secret (all keys) - only when include_all is enabled
-	if includeAll {
-		secrets, err := b.secrets.GetSecret(ctx, b.env.Secret)
-		if err != nil {
-			return nil, err
-		}
-		for key, value := range secrets {
-			entries[key] = Entry{
-				Key:    key,
-				Value:  value,
-				Source: b.env.Secret,
-			}
-		}
-	}
-
-	// 2. Process global include entries for the active environment
-	if globalIncludes, ok := b.config.Include[b.envName]; ok {
-		if err := b.processIncludes(ctx, entries, globalIncludes, includeAll); err != nil {
+	// 1. Process primary source (first entry) using the primary client.
+	//    When includeAll is false and no explicit key/keys, primary is skipped
+	//    (mappings may still reference the secret directly).
+	if len(b.env.Sources) > 0 {
+		if err := b.processPrimary(ctx, entries, b.env.Sources[0], includeAll); err != nil {
 			return nil, err
 		}
 	}
 
-	// 3. Process app-level include entries for the active environment
-	if b.app != nil {
-		if appIncludes, ok := b.app.Include[b.envName]; ok {
-			if err := b.processIncludes(ctx, entries, appIncludes, includeAll); err != nil {
-				return nil, err
-			}
+	// 2. Process additional sources (later sources override earlier)
+	if len(b.env.Sources) > 1 {
+		if err := b.processIncludes(ctx, entries, b.env.Sources[1:], includeAll); err != nil {
+			return nil, err
 		}
 	}
 
-	// 4. Apply global mapping entries
+	// 3. Apply global mapping entries
 	if err := b.processMapping(ctx, entries, b.config.Mapping); err != nil {
 		return nil, err
 	}
 
-	// 5. Apply app-level mapping entries (if in application mode)
+	// 4. Apply app-level mapping entries (if in application mode)
 	if b.app != nil && len(b.app.Mapping) > 0 {
 		if err := b.processMapping(ctx, entries, b.app.Mapping); err != nil {
 			return nil, err
 		}
 	}
 
-	// 6. Apply overrides
+	// 5. Apply overrides
 	for key, value := range overrides {
 		entries[key] = Entry{
 			Key:    key,
@@ -168,35 +152,75 @@ func (b *Builder) resolveConfig() error {
 	return nil
 }
 
-// resolveIncludeBackend determines the backend type for an include entry.
-// Returns empty string if no backend is specified (use primary client).
-func resolveIncludeBackend(inc config.IncludeEntry) string {
-	if inc.OnePass != nil {
-		return config.Backend1Pass
+// processPrimary handles the first source entry using the primary client.
+// Unlike additional sources, the primary is silently skipped when includeAll
+// is false and no explicit key/keys are specified.
+func (b *Builder) processPrimary(
+	ctx context.Context,
+	entries map[string]Entry,
+	primary config.IncludeEntry,
+	includeAll bool,
+) error {
+	switch {
+	case primary.Key != "":
+		value, err := b.secrets.GetSecretKey(ctx, primary.Secret, primary.Key)
+		if err != nil {
+			return err
+		}
+		name := primary.Key
+		if primary.As != "" {
+			name = primary.As
+		}
+		entries[name] = Entry{Key: name, Value: value, Source: primary.Secret}
+	case len(primary.Keys) > 0:
+		for _, km := range primary.Keys {
+			value, err := b.secrets.GetSecretKey(ctx, primary.Secret, km.Key)
+			if err != nil {
+				return err
+			}
+			name := km.Key
+			if km.As != "" {
+				name = km.As
+			}
+			entries[name] = Entry{Key: name, Value: value, Source: primary.Secret}
+		}
+	case includeAll:
+		allSecrets, err := b.secrets.GetSecret(ctx, primary.Secret)
+		if err != nil {
+			return err
+		}
+		for key, value := range allSecrets {
+			entries[key] = Entry{Key: key, Value: value, Source: primary.Secret}
+		}
+	default:
+		// includeAll=false, no explicit keys — skip primary.
+		// Mappings may still reference this secret directly.
 	}
-	if inc.AWS != nil {
-		return config.BackendAWS
-	}
-	return ""
+	return nil
 }
 
 // clientForInclude returns the appropriate secrets client for an include entry.
-// If the include specifies a different backend than the primary, uses the client factory.
+// If the include has a backend qualifier (aws: or 1pass:), a new client is created
+// for that backend. Otherwise, the primary client is used.
 func (b *Builder) clientForInclude(ctx context.Context, inc config.IncludeEntry) (secrets.Client, error) {
-	incBackend := resolveIncludeBackend(inc)
-	if incBackend == "" || incBackend == b.activeBackend {
+	if inc.AWS == nil && inc.OnePass == nil {
 		return b.secrets, nil
 	}
-	if b.clientFactory == nil {
-		return b.secrets, nil
-	}
-	return b.clientFactory(ctx, incBackend, inc.AWS, inc.OnePass)
+
+	syntheticEnv := config.NewEnvironment(inc)
+
+	return b.newClient(ctx, secrets.Options{
+		Config:  b.config,
+		Env:     &syntheticEnv,
+		NoCache: b.noCache,
+		Refresh: b.refresh,
+	})
 }
 
 // processIncludes processes a list of include entries.
 // When includeAll is false, entries without a specific key will error.
 //
-//nolint:nestif // Include logic requires nested checks for key presence and includeAll mode
+//nolint:gocognit,revive // Include logic requires nested checks for key presence and includeAll mode
 func (b *Builder) processIncludes(
 	ctx context.Context,
 	entries map[string]Entry,
@@ -209,7 +233,8 @@ func (b *Builder) processIncludes(
 			return err
 		}
 
-		if inc.Key != "" {
+		switch {
+		case inc.Key != "":
 			// Extract specific key
 			value, err := client.GetSecretKey(ctx, inc.Secret, inc.Key)
 			if err != nil {
@@ -224,7 +249,24 @@ func (b *Builder) processIncludes(
 				Value:  value,
 				Source: inc.Secret,
 			}
-		} else {
+		case len(inc.Keys) > 0:
+			// Extract multiple specific keys from the same secret
+			for _, km := range inc.Keys {
+				value, err := client.GetSecretKey(ctx, inc.Secret, km.Key)
+				if err != nil {
+					return err
+				}
+				name := km.Key
+				if km.As != "" {
+					name = km.As
+				}
+				entries[name] = Entry{
+					Key:    name,
+					Value:  value,
+					Source: inc.Secret,
+				}
+			}
+		default:
 			// Include all keys from secret - requires include_all to be enabled
 			if !includeAll {
 				return &errors.IncludeAllRequiredError{Secret: inc.Secret}

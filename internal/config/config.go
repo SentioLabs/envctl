@@ -30,27 +30,25 @@ const (
 //
 //nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type Config struct {
-	Version            int                       `yaml:"version"`
-	DefaultApplication string                    `yaml:"default_application,omitempty"`
-	DefaultEnvironment string                    `yaml:"default_environment,omitempty"`
-	IncludeAll         *bool                     `yaml:"include_all,omitempty"`
-	AWS                *AWSConfig                `yaml:"aws,omitempty"`
-	OnePass            *OnePassConfig            `yaml:"1pass,omitempty"`
-	Applications       map[string]*Application   `yaml:"applications,omitempty"`
-	Environments       map[string]Environment    `yaml:"environments,omitempty"`
-	Include            map[string][]IncludeEntry `yaml:"include,omitempty"`
-	Mapping            map[string]string         `yaml:"mapping,omitempty"`
-	Cache              *CacheConfig              `yaml:"cache,omitempty"`
+	Version            int                     `yaml:"version"`
+	DefaultApplication string                  `yaml:"default_application,omitempty"`
+	DefaultEnvironment string                  `yaml:"default_environment,omitempty"`
+	IncludeAll         *bool                   `yaml:"include_all,omitempty"`
+	AWS                *AWSConfig              `yaml:"aws,omitempty"`
+	OnePass            *OnePassConfig          `yaml:"1pass,omitempty"`
+	Applications       map[string]*Application `yaml:"applications,omitempty"`
+	Environments       map[string]Environment  `yaml:"environments,omitempty"`
+	Mapping            map[string]string       `yaml:"mapping,omitempty"`
+	Cache              *CacheConfig            `yaml:"cache,omitempty"`
 }
 
 // Application represents an application with its environment configurations.
 //
 //nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type Application struct {
-	Environments map[string]Environment    `yaml:",inline"`
-	Include      map[string][]IncludeEntry `yaml:"include,omitempty"`
-	Mapping      map[string]string         `yaml:"mapping,omitempty"`
-	IncludeAll   *bool                     `yaml:"include_all,omitempty"`
+	Environments map[string]Environment `yaml:",inline"`
+	Mapping      map[string]string      `yaml:"mapping,omitempty"`
+	IncludeAll   *bool                  `yaml:"include_all,omitempty"`
 }
 
 // CacheConfig represents cache configuration.
@@ -73,13 +71,81 @@ type OnePassConfig struct {
 }
 
 // Environment represents a single environment configuration.
-//
-//nolint:tagliatelle // Using snake_case for YAML field names is intentional
+// It supports two YAML formats:
+//   - Mapping (legacy): {secret: "...", aws: {...}} → single-entry Sources
+//   - Sequence (new): [{secret: "..."}, {secret: "...", aws: {...}}] → multi-entry Sources
 type Environment struct {
-	Secret     string         `yaml:"secret"` //nolint:gosec // G117: not credentials
-	IncludeAll *bool          `yaml:"include_all,omitempty"`
-	AWS        *AWSConfig     `yaml:"aws,omitempty"`
-	OnePass    *OnePassConfig `yaml:"1pass,omitempty"`
+	Sources    []IncludeEntry // Populated by UnmarshalYAML
+	IncludeAll *bool          // Populated by UnmarshalYAML (legacy format only)
+	AWS        *AWSConfig     // First source's backend (for primary client creation)
+	OnePass    *OnePassConfig // First source's backend (for primary client creation)
+}
+
+// NewEnvironment creates an Environment from a list of sources.
+// Backend config (AWS/OnePass) is set from the first source.
+func NewEnvironment(sources ...IncludeEntry) Environment {
+	env := Environment{Sources: sources}
+	if len(sources) > 0 {
+		env.AWS = sources[0].AWS
+		env.OnePass = sources[0].OnePass
+	}
+	return env
+}
+
+// Secret returns the primary secret reference (from the first source).
+func (e *Environment) Secret() string {
+	if len(e.Sources) > 0 {
+		return e.Sources[0].Secret
+	}
+	return ""
+}
+
+// UnmarshalYAML implements custom YAML unmarshaling to support both
+// legacy mapping format and new sequence format.
+func (e *Environment) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.MappingNode:
+		// Legacy single-secret format: {secret: "...", aws: {...}, include_all: true}
+		//nolint:tagliatelle // Using snake_case for YAML field names is intentional
+		var legacy struct {
+			Secret     string         `yaml:"secret"` //nolint:gosec // G117: refers to secret ref, not creds
+			IncludeAll *bool          `yaml:"include_all,omitempty"`
+			AWS        *AWSConfig     `yaml:"aws,omitempty"`
+			OnePass    *OnePassConfig `yaml:"1pass,omitempty"`
+		}
+		if err := value.Decode(&legacy); err != nil {
+			return err
+		}
+		e.Sources = []IncludeEntry{{
+			Secret:  legacy.Secret,
+			AWS:     legacy.AWS,
+			OnePass: legacy.OnePass,
+		}}
+		e.IncludeAll = legacy.IncludeAll
+		e.AWS = legacy.AWS
+		e.OnePass = legacy.OnePass
+		return nil
+	case yaml.SequenceNode:
+		// New list format: [{secret: "..."}, {secret: "...", aws: {...}}]
+		var sources []IncludeEntry
+		if err := value.Decode(&sources); err != nil {
+			return err
+		}
+		e.Sources = sources
+		if len(sources) > 0 {
+			e.AWS = sources[0].AWS
+			e.OnePass = sources[0].OnePass
+		}
+		return nil
+	default:
+		return fmt.Errorf("environment must be a mapping or sequence, got %v", value.Kind)
+	}
+}
+
+// KeyMapping represents a single key extraction from a secret with optional renaming.
+type KeyMapping struct {
+	Key string `yaml:"key"`
+	As  string `yaml:"as,omitempty"`
 }
 
 // IncludeEntry represents an additional secret to include.
@@ -88,6 +154,7 @@ type IncludeEntry struct {
 	Secret  string         `yaml:"secret"`
 	Key     string         `yaml:"key,omitempty"`
 	As      string         `yaml:"as,omitempty"`
+	Keys    []KeyMapping   `yaml:"keys,omitempty"`
 	AWS     *AWSConfig     `yaml:"aws,omitempty"`
 	OnePass *OnePassConfig `yaml:"1pass,omitempty"`
 }
@@ -153,7 +220,7 @@ func FindConfigFrom(startPath string) (string, error) {
 
 // Validate checks the config for required fields and valid values.
 //
-//nolint:revive,gocognit // Config validation requires checking multiple conditions in sequence
+//nolint:revive // Config validation requires checking multiple conditions in sequence
 func (c *Config) Validate(path string) error {
 	if c.Version != CurrentVersion {
 		return &errors.ConfigError{
@@ -187,13 +254,8 @@ func (c *Config) Validate(path string) error {
 			}
 		}
 		for envName, env := range app.Environments {
-			if env.Secret == "" {
-				msg := "application " + appName + " environment " + envName +
-					" is missing required 'secret' field"
-				return &errors.ConfigError{
-					Path:    path,
-					Message: msg,
-				}
+			if err := validateEnvironment(env, "application "+appName+" environment "+envName, path); err != nil {
+				return err
 			}
 		}
 	}
@@ -218,87 +280,61 @@ func (c *Config) Validate(path string) error {
 		}
 	}
 
-	// Validate per-environment: cannot have both aws and 1pass
+	// Validate per-environment sources
 	for envName, env := range c.Environments {
-		if env.Secret == "" {
+		if err := validateEnvironment(env, "environment "+envName, path); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateEnvironment validates a single environment's sources.
+func validateEnvironment(env Environment, location, path string) error {
+	if len(env.Sources) == 0 || env.Sources[0].Secret == "" {
+		return &errors.ConfigError{
+			Path:    path,
+			Message: location + " is missing required 'secret' field",
+		}
+	}
+	for i, src := range env.Sources {
+		if src.Secret == "" {
 			return &errors.ConfigError{
 				Path:    path,
-				Message: "environment " + envName + " is missing required 'secret' field",
+				Message: fmt.Sprintf("%s source[%d] is missing required 'secret' field", location, i),
 			}
 		}
-		if env.AWS != nil && env.OnePass != nil {
+		if src.AWS != nil && src.OnePass != nil {
 			return &errors.ConfigError{
 				Path:    path,
-				Message: "environment " + envName + " cannot specify both 'aws' and '1pass'",
+				Message: fmt.Sprintf("%s source[%d] cannot specify both 'aws' and '1pass'", location, i),
+			}
+		}
+		loc := fmt.Sprintf("%s source[%d]", location, i)
+		if err := validateIncludeKeys(src, loc, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateIncludeKeys checks that key and keys are not both set, and that keys entries have non-empty key fields.
+func validateIncludeKeys(inc IncludeEntry, location, path string) error {
+	if inc.Key != "" && len(inc.Keys) > 0 {
+		return &errors.ConfigError{
+			Path:    path,
+			Message: location + " cannot specify both 'key' and 'keys'",
+		}
+	}
+	for j, km := range inc.Keys {
+		if km.Key == "" {
+			return &errors.ConfigError{
+				Path:    path,
+				Message: fmt.Sprintf("%s keys[%d] is missing required 'key' field", location, j),
 			}
 		}
 	}
-
-	// Validate include entries: cannot have both aws and 1pass
-	for envName, entries := range c.Include {
-		for _, entry := range entries {
-			if entry.AWS != nil && entry.OnePass != nil {
-				return &errors.ConfigError{
-					Path:    path,
-					Message: "include entry for environment " + envName + " cannot specify both 'aws' and '1pass'",
-				}
-			}
-		}
-	}
-
-	// Validate application include entries
-	for appName, app := range c.Applications {
-		for envName, entries := range app.Include {
-			for _, entry := range entries {
-				if entry.AWS != nil && entry.OnePass != nil {
-					return &errors.ConfigError{
-						Path: path,
-						Message: "application " + appName + " include entry for environment " +
-							envName + " cannot specify both 'aws' and '1pass'",
-					}
-				}
-			}
-		}
-	}
-
-	// Same check for application environments
-	for appName, app := range c.Applications {
-		for envName, env := range app.Environments {
-			if env.AWS != nil && env.OnePass != nil {
-				return &errors.ConfigError{
-					Path:    path,
-					Message: "application " + appName + " environment " + envName + " cannot specify both 'aws' and '1pass'",
-				}
-			}
-		}
-	}
-
-	// Validate include entries have required secret field
-	for envKey, entries := range c.Include {
-		for i, inc := range entries {
-			if inc.Secret == "" {
-				return &errors.ConfigError{
-					Path:    path,
-					Message: fmt.Sprintf("include[%s][%d] is missing required 'secret' field", envKey, i),
-				}
-			}
-		}
-	}
-
-	// Validate application include entries have required secret field
-	for appName, app := range c.Applications {
-		for envKey, entries := range app.Include {
-			for i, inc := range entries {
-				if inc.Secret == "" {
-					return &errors.ConfigError{
-						Path:    path,
-						Message: fmt.Sprintf("application %s include[%s][%d] is missing required 'secret' field", appName, envKey, i),
-					}
-				}
-			}
-		}
-	}
-
 	return nil
 }
 

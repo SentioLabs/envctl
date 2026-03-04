@@ -1,0 +1,10 @@
+version: 1
+default_environment: dev
+environments:
+  local:
+    secret: myapp/local
+  dev:
+    - secret: myapp/dev
+    - secret: shared/extras
+      key: api_key
+      as: EXTRA_KEY

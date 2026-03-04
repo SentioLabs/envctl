@@ -1,6 +1,4 @@
-package docs
-
-const Patterns = `Common Integration Patterns
+Common Integration Patterns
 ===========================
 
 Docker Compose
@@ -103,7 +101,7 @@ Option 2: Shared config (centralized)
       worker/
         run-local.sh
 
-Root .envctl.yaml uses application mode:
+Root .envctl.yaml uses application mode with source lists:
 
   version: 1
   default_environment: dev
@@ -111,14 +109,12 @@ Root .envctl.yaml uses application mode:
   applications:
     api:
       dev:
-        secret: myorg/api/dev
+        - secret: myorg/api/dev
+        - secret: shared/datadog     # Shared across apps
     worker:
       dev:
-        secret: myorg/worker/dev
-
-  # Shared across all apps
-  include:
-    - secret: shared/datadog
+        - secret: myorg/worker/dev
+        - secret: shared/datadog
 
 Run from anywhere:
 
@@ -165,7 +161,8 @@ Note: --no-cache is recommended in CI to avoid stale secrets.
 Multiple AWS Accounts
 ---------------------
 
-If dev/staging/prod are in different AWS accounts:
+If dev/staging/prod are in different AWS accounts, use per-source
+aws: blocks for region/profile overrides:
 
   version: 1
   default_environment: dev
@@ -173,16 +170,50 @@ If dev/staging/prod are in different AWS accounts:
   environments:
     dev:
       secret: myapp/dev
-      region: us-east-1       # Dev account
+      aws:
+        region: us-east-1       # Dev account
+        profile: dev
     staging:
       secret: myapp/staging
-      region: us-east-1       # Staging account
+      aws:
+        region: us-east-1       # Staging account
+        profile: staging
     prod:
       secret: myapp/prod
-      region: us-west-2       # Prod account
+      aws:
+        region: us-west-2       # Prod account
+        profile: prod
 
-Switch AWS credentials per environment:
+Or use environment variables to switch credentials:
 
   AWS_PROFILE=dev envctl -e dev run -- make dev
   AWS_PROFILE=staging envctl -e staging run -- make dev
-`
+
+Cross-Backend Sources
+---------------------
+
+Mix 1Password and AWS Secrets Manager in the same environment
+using the source list format:
+
+  version: 1
+  default_environment: dev
+
+  1pass:
+    vault: Development
+
+  environments:
+    dev:
+      - secret: My App Secrets       # Primary from 1Password
+        1pass:
+          vault: Development
+
+      - secret: shared/aws-config    # Additional from AWS
+        aws:
+          region: us-east-1
+        keys:
+          - key: database_host
+            as: DATABASE_HOST
+          - key: database_password
+            as: DATABASE_PASSWORD
+
+Later sources in the list override earlier ones when keys conflict.

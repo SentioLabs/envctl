@@ -1,6 +1,4 @@
-package docs
-
-const Overview = `envctl Documentation
+envctl Documentation
 ====================
 
 envctl enables developers to use a secrets manager (AWS Secrets Manager or
@@ -24,7 +22,7 @@ Quick Start
   # Create a starter configuration
   envctl init --secret myapp/dev
 
-  # Validate AWS connectivity
+  # Validate backend connectivity
   envctl validate
 
   # Run a command with secrets injected
@@ -33,5 +31,27 @@ Quick Start
   # Generate .env file for Docker Compose
   envctl env > .env
 
+Other Commands
+--------------
+
+  envctl export          Shell export statements (for eval)
+  envctl get SECRET#KEY  Fetch a single secret value
+  envctl list            List configured environments/applications
+  envctl cache status    Show cache status
+  envctl cache clear     Clear cached secrets
+
+Global Flags
+------------
+
+  --config, -c FILE   Path to config file (default: auto-detect)
+  --app, -a NAME      Select application (application mode)
+  --env, -e NAME      Select environment
+  --verbose, -v       Enable verbose output
+  --no-cache          Disable secret caching
+  --refresh           Bypass cache, fetch fresh secrets
+  --include-all       Include all keys from primary secret
+
+The 'run' command also supports:
+  --set KEY=VALUE     Override or add environment variables
+
 For more information, see: https://github.com/sentiolabs/envctl
-`

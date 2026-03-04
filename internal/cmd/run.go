@@ -1,10 +1,11 @@
+// Package cmd implements the CLI commands for envctl.
+// This file contains the run command for executing processes with injected secrets.
 package cmd
 
 import (
 	"context"
 	"strings"
 
-	"github.com/sentiolabs/envctl/internal/config"
 	"github.com/sentiolabs/envctl/internal/env"
 	"github.com/sentiolabs/envctl/internal/runner"
 	"github.com/spf13/cobra"
@@ -36,54 +37,22 @@ Example:
 	}
 )
 
+// init registers the run command with the root command.
 func init() {
 	runCmd.Flags().StringArrayVar(&setFlags, "set", nil, "Set or override an environment variable (KEY=VALUE)")
 	rootCmd.AddCommand(runCmd)
 }
 
+// runRun executes a command with secrets injected into its environment.
 func runRun(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	// Load config
-	configPath := configFile
-	if configPath == "" {
-		var err error
-		configPath, err = config.FindConfig()
-		if err != nil {
-			return err
-		}
-	}
-	verboseLog("Using config: %s", configPath)
-
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return err
-	}
-
-	// Resolve environment config
-	envConfig, _, err := resolveEnvironmentConfig(cfg)
-	if err != nil {
-		return err
-	}
-	verboseLog("Using environment: %s (secret: %s)", envName, envConfig.Secret)
-
-	// Create secrets client with caching
-	client, err := createSecretsClient(ctx, cfg, envConfig)
-	if err != nil {
-		return err
-	}
-
-	// Parse overrides from --set flags
 	overrides := parseOverrides(setFlags)
 
-	// Build environment
-	builder := env.NewBuilder(client, cfg, appName, envName).
-		WithIncludeAll(getIncludeAllOverride(cmd))
-	entries, err := builder.Build(ctx, overrides)
+	entries, _, err := loadAndBuild(ctx, cmd, overrides)
 	if err != nil {
 		return err
 	}
-	verboseLog("Loaded %d environment variables", len(entries))
 
 	// Run the command
 	envMap := env.ToMap(entries)

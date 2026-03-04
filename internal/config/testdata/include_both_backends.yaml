@@ -1,9 +1,7 @@
 version: 1
 environments:
   dev:
-    secret: myapp/dev
-include:
-  dev:
+    - secret: myapp/dev
     - secret: shared/creds
       aws:
         region: us-east-1
