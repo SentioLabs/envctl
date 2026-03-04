@@ -2,6 +2,13 @@
 
 All notable changes to envctl will be documented in this file.
 
+## [0.3.1](https://github.com/SentioLabs/envctl/compare/v0.3.0...v0.3.1) (2026-03-04)
+
+
+### Bug Fixes
+
+* **install:** prevent silent exit when version lacks v prefix ([18a51bc](https://github.com/SentioLabs/envctl/commit/18a51bc53eeae4cb24671f2838171e49b904b452))
+
 ## [0.3.0](https://github.com/SentioLabs/envctl/compare/v0.2.0...v0.3.0) (2026-03-03)
 
 
