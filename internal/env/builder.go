@@ -9,6 +9,15 @@ import (
 	"github.com/sentiolabs/envctl/internal/secrets"
 )
 
+// ClientFactory creates a secrets client for a specific backend configuration.
+// Used by includes that specify a different backend than the environment's primary.
+type ClientFactory func(
+	ctx context.Context,
+	backend string,
+	aws *config.AWSConfig,
+	onepass *config.OnePassConfig,
+) (secrets.Client, error)
+
 // Entry represents a resolved environment variable with its source.
 type Entry struct {
 	Key    string
@@ -18,13 +27,15 @@ type Entry struct {
 
 // Builder builds environment variables from configuration.
 type Builder struct {
-	secrets    secrets.Client
-	config     *config.Config
-	appName    string
-	envName    string
-	app        *config.Application // Resolved application (nil in legacy mode)
-	env        *config.Environment // Resolved environment
-	includeAll *bool               // CLI override for include_all setting
+	secrets       secrets.Client
+	config        *config.Config
+	appName       string
+	envName       string
+	app           *config.Application // Resolved application (nil in legacy mode)
+	env           *config.Environment // Resolved environment
+	includeAll    *bool               // CLI override for include_all setting
+	clientFactory ClientFactory       // Factory for creating backend-specific clients
+	activeBackend string              // Resolved backend name for the primary client
 }
 
 // NewBuilder creates a new environment builder.
@@ -42,6 +53,20 @@ func NewBuilder(client secrets.Client, cfg *config.Config, appName, envName stri
 // Returns the builder for method chaining.
 func (b *Builder) WithIncludeAll(val *bool) *Builder {
 	b.includeAll = val
+	return b
+}
+
+// WithClientFactory sets the factory function for creating backend-specific clients.
+// Returns the builder for method chaining.
+func (b *Builder) WithClientFactory(f ClientFactory) *Builder {
+	b.clientFactory = f
+	return b
+}
+
+// WithBackend sets the resolved backend name for the primary client.
+// Returns the builder for method chaining.
+func (b *Builder) WithBackend(backend string) *Builder {
+	b.activeBackend = backend
 	return b
 }
 

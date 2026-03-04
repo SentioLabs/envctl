@@ -37,7 +37,7 @@ type Config struct {
 	OnePass            *OnePassConfig          `yaml:"1pass,omitempty"`
 	Applications       map[string]*Application `yaml:"applications,omitempty"`
 	Environments       map[string]Environment  `yaml:"environments,omitempty"`
-	Include            []IncludeEntry          `yaml:"include,omitempty"`
+	Include            map[string][]IncludeEntry `yaml:"include,omitempty"`
 	Mapping            map[string]string       `yaml:"mapping,omitempty"`
 	Cache              *CacheConfig            `yaml:"cache,omitempty"`
 }
@@ -47,7 +47,7 @@ type Config struct {
 //nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type Application struct {
 	Environments map[string]Environment `yaml:",inline"`
-	Include      []IncludeEntry         `yaml:"include,omitempty"`
+	Include      map[string][]IncludeEntry `yaml:"include,omitempty"`
 	Mapping      map[string]string      `yaml:"mapping,omitempty"`
 	IncludeAll   *bool                  `yaml:"include_all,omitempty"`
 }
@@ -82,10 +82,14 @@ type Environment struct {
 }
 
 // IncludeEntry represents an additional secret to include.
+//
+//nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type IncludeEntry struct {
-	Secret string `yaml:"secret"` //nolint:gosec // G117: field name refers to a secret reference, not credentials
-	Key    string `yaml:"key,omitempty"`
-	As     string `yaml:"as,omitempty"`
+	Secret  string         `yaml:"secret"` //nolint:gosec // G117: field name refers to a secret reference, not credentials
+	Key     string         `yaml:"key,omitempty"`
+	As      string         `yaml:"as,omitempty"`
+	AWS     *AWSConfig     `yaml:"aws,omitempty"`
+	OnePass *OnePassConfig `yaml:"1pass,omitempty"`
 }
 
 // Load reads and parses a config file from the given path.
@@ -226,6 +230,32 @@ func (c *Config) Validate(path string) error {
 			return &errors.ConfigError{
 				Path:    path,
 				Message: "environment " + envName + " cannot specify both 'aws' and '1pass'",
+			}
+		}
+	}
+
+	// Validate include entries: cannot have both aws and 1pass
+	for envName, entries := range c.Include {
+		for _, entry := range entries {
+			if entry.AWS != nil && entry.OnePass != nil {
+				return &errors.ConfigError{
+					Path:    path,
+					Message: "include entry for environment " + envName + " cannot specify both 'aws' and '1pass'",
+				}
+			}
+		}
+	}
+
+	// Validate application include entries
+	for appName, app := range c.Applications {
+		for envName, entries := range app.Include {
+			for _, entry := range entries {
+				if entry.AWS != nil && entry.OnePass != nil {
+					return &errors.ConfigError{
+						Path:    path,
+						Message: "application " + appName + " include entry for environment " + envName + " cannot specify both 'aws' and '1pass'",
+					}
+				}
 			}
 		}
 	}

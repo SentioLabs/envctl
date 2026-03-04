@@ -2,11 +2,13 @@
 package env
 
 import (
+	"context"
 	"testing"
 
 	"github.com/sentiolabs/envctl/internal/config"
 	"github.com/sentiolabs/envctl/internal/errors"
 	"github.com/sentiolabs/envctl/internal/mocks"
+	"github.com/sentiolabs/envctl/internal/secrets"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -374,6 +376,98 @@ func TestToMap(t *testing.T) {
 	assert.Equal(t, "value1", result["KEY1"])
 	assert.Equal(t, "value2", result["KEY2"])
 	assert.Equal(t, "value3", result["KEY3"])
+}
+
+func TestBuilder_WithClientFactory(t *testing.T) {
+	// Test that WithClientFactory sets the factory on the builder
+	mockClient := mocks.NewMockClient(t)
+
+	cfg := &config.Config{
+		Version:            1,
+		DefaultEnvironment: "dev",
+		IncludeAll:         new(false),
+		Environments: map[string]config.Environment{
+			"dev": {Secret: "my-app/dev"},
+		},
+		Mapping: map[string]string{
+			"DATABASE_URL": "my-app/dev#connection_string",
+		},
+	}
+
+	var factoryCalled bool
+	factory := ClientFactory(func(
+		ctx context.Context, backend string,
+		aws *config.AWSConfig, onepass *config.OnePassConfig,
+	) (secrets.Client, error) {
+		factoryCalled = true
+		return mockClient, nil
+	})
+
+	builder := NewBuilder(mockClient, cfg, "", "dev").WithClientFactory(factory)
+
+	// Verify the field is set (non-nil)
+	assert.NotNil(t, builder.clientFactory)
+
+	// Call the factory to verify it's the one we set
+	_, _ = builder.clientFactory(t.Context(), "aws", nil, nil)
+	assert.True(t, factoryCalled)
+}
+
+func TestBuilder_WithBackend(t *testing.T) {
+	// Test that WithBackend sets the activeBackend field
+	mockClient := mocks.NewMockClient(t)
+
+	cfg := &config.Config{
+		Version:            1,
+		DefaultEnvironment: "dev",
+		Environments: map[string]config.Environment{
+			"dev": {Secret: "my-app/dev"},
+		},
+	}
+
+	builder := NewBuilder(mockClient, cfg, "", "dev").WithBackend("aws")
+	assert.Equal(t, "aws", builder.activeBackend)
+}
+
+func TestBuilder_MethodChaining(t *testing.T) {
+	// Test that builder methods chain correctly
+	mockClient := mocks.NewMockClient(t)
+
+	cfg := &config.Config{
+		Version:            1,
+		DefaultEnvironment: "dev",
+		IncludeAll:         new(true),
+		Environments: map[string]config.Environment{
+			"dev": {Secret: "my-app/dev"},
+		},
+	}
+
+	factory := ClientFactory(func(
+		ctx context.Context, backend string,
+		aws *config.AWSConfig, onepass *config.OnePassConfig,
+	) (secrets.Client, error) {
+		return mockClient, nil
+	})
+
+	builder := NewBuilder(mockClient, cfg, "", "dev").
+		WithIncludeAll(new(true)).
+		WithBackend("1password").
+		WithClientFactory(factory)
+
+	// Verify all fields are set correctly
+	assert.NotNil(t, builder.includeAll)
+	assert.True(t, *builder.includeAll)
+	assert.Equal(t, "1password", builder.activeBackend)
+	assert.NotNil(t, builder.clientFactory)
+
+	// Verify the builder still works with Build after chaining
+	mockClient.On("GetSecret", mock.Anything, "my-app/dev").Return(map[string]string{
+		"KEY": "value",
+	}, nil)
+
+	entries, err := builder.Build(t.Context(), nil)
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
 }
 
 func TestToMap_EmptyInput(t *testing.T) {

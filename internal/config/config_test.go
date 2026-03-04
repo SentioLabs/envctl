@@ -36,10 +36,11 @@ environments:
   staging:
     secret: myapp/staging
 include:
-  - secret: shared/datadog
-  - secret: shared/stripe
-    key: api_key
-    as: STRIPE_KEY
+  dev:
+    - secret: shared/datadog
+    - secret: shared/stripe
+      key: api_key
+      as: STRIPE_KEY
 mapping:
   DB_URL: myapp/dev#database_url
 `,
@@ -462,6 +463,167 @@ func TestResolveOnePassConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEnvKeyedIncludes(t *testing.T) {
+	t.Run("parses env-keyed includes correctly", func(t *testing.T) {
+		content := `version: 1
+environments:
+  dev:
+    secret: myapp/dev
+include:
+  dev:
+    - secret: shared/datadog
+    - secret: shared/stripe
+      key: api_key
+      as: STRIPE_KEY
+  staging:
+    - secret: shared/monitoring
+`
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, ConfigFileName)
+		if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+			t.Fatalf("failed to write test config: %v", err)
+		}
+
+		cfg, err := Load(configPath)
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+
+		if len(cfg.Include) != 2 {
+			t.Fatalf("expected 2 environment keys in include, got %d", len(cfg.Include))
+		}
+
+		devIncludes := cfg.Include["dev"]
+		if len(devIncludes) != 2 {
+			t.Fatalf("expected 2 dev includes, got %d", len(devIncludes))
+		}
+		if devIncludes[0].Secret != "shared/datadog" {
+			t.Errorf("expected first dev include secret = %q, got %q", "shared/datadog", devIncludes[0].Secret)
+		}
+		if devIncludes[1].Secret != "shared/stripe" {
+			t.Errorf("expected second dev include secret = %q, got %q", "shared/stripe", devIncludes[1].Secret)
+		}
+		if devIncludes[1].Key != "api_key" {
+			t.Errorf("expected second dev include key = %q, got %q", "api_key", devIncludes[1].Key)
+		}
+		if devIncludes[1].As != "STRIPE_KEY" {
+			t.Errorf("expected second dev include as = %q, got %q", "STRIPE_KEY", devIncludes[1].As)
+		}
+
+		stagingIncludes := cfg.Include["staging"]
+		if len(stagingIncludes) != 1 {
+			t.Fatalf("expected 1 staging include, got %d", len(stagingIncludes))
+		}
+		if stagingIncludes[0].Secret != "shared/monitoring" {
+			t.Errorf("expected staging include secret = %q, got %q", "shared/monitoring", stagingIncludes[0].Secret)
+		}
+	})
+
+	t.Run("include entry with aws config parses correctly", func(t *testing.T) {
+		content := `version: 1
+environments:
+  dev:
+    secret: myapp/dev
+include:
+  dev:
+    - secret: shared/datadog
+      aws:
+        region: eu-west-1
+        profile: datadog-profile
+`
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, ConfigFileName)
+		if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+			t.Fatalf("failed to write test config: %v", err)
+		}
+
+		cfg, err := Load(configPath)
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+
+		devIncludes := cfg.Include["dev"]
+		if len(devIncludes) != 1 {
+			t.Fatalf("expected 1 dev include, got %d", len(devIncludes))
+		}
+		if devIncludes[0].AWS == nil {
+			t.Fatal("expected AWS config on include entry, got nil")
+		}
+		if devIncludes[0].AWS.Region != "eu-west-1" {
+			t.Errorf("expected AWS region = %q, got %q", "eu-west-1", devIncludes[0].AWS.Region)
+		}
+		if devIncludes[0].AWS.Profile != "datadog-profile" {
+			t.Errorf("expected AWS profile = %q, got %q", "datadog-profile", devIncludes[0].AWS.Profile)
+		}
+	})
+
+	t.Run("include entry with 1pass config parses correctly", func(t *testing.T) {
+		content := `version: 1
+environments:
+  dev:
+    secret: myapp/dev
+include:
+  dev:
+    - secret: shared/creds
+      1pass:
+        vault: shared-vault
+        account: team-account
+`
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, ConfigFileName)
+		if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+			t.Fatalf("failed to write test config: %v", err)
+		}
+
+		cfg, err := Load(configPath)
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+
+		devIncludes := cfg.Include["dev"]
+		if len(devIncludes) != 1 {
+			t.Fatalf("expected 1 dev include, got %d", len(devIncludes))
+		}
+		if devIncludes[0].OnePass == nil {
+			t.Fatal("expected OnePass config on include entry, got nil")
+		}
+		if devIncludes[0].OnePass.Vault != "shared-vault" {
+			t.Errorf("expected OnePass vault = %q, got %q", "shared-vault", devIncludes[0].OnePass.Vault)
+		}
+		if devIncludes[0].OnePass.Account != "team-account" {
+			t.Errorf("expected OnePass account = %q, got %q", "team-account", devIncludes[0].OnePass.Account)
+		}
+	})
+
+	t.Run("include entry with both aws and 1pass fails validation", func(t *testing.T) {
+		content := `version: 1
+environments:
+  dev:
+    secret: myapp/dev
+include:
+  dev:
+    - secret: shared/creds
+      aws:
+        region: us-east-1
+      1pass:
+        vault: shared-vault
+`
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, ConfigFileName)
+		if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+			t.Fatalf("failed to write test config: %v", err)
+		}
+
+		_, err := Load(configPath)
+		if err == nil {
+			t.Fatal("Load() expected error for include with both aws and 1pass, got nil")
+		}
+		if !containsSubstring(err.Error(), "cannot specify both 'aws' and '1pass'") {
+			t.Errorf("Load() error = %q, want error containing %q", err.Error(), "cannot specify both 'aws' and '1pass'")
+		}
+	})
 }
 
 func TestShouldIncludeAll(t *testing.T) {
