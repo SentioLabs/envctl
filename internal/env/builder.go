@@ -9,13 +9,11 @@ import (
 	"github.com/sentiolabs/envctl/internal/secrets"
 )
 
-// ClientFactory creates a secrets client for a specific backend configuration.
-// Used by includes that specify a different backend than the environment's primary.
+// ClientFactory creates a secrets client for a given backend type.
+// It receives the backend name and optional backend-specific configs.
 type ClientFactory func(
-	ctx context.Context,
-	backend string,
-	aws *config.AWSConfig,
-	onepass *config.OnePassConfig,
+	ctx context.Context, backend string,
+	awsCfg *config.AWSConfig, opCfg *config.OnePassConfig,
 ) (secrets.Client, error)
 
 // Entry represents a resolved environment variable with its source.
@@ -34,8 +32,8 @@ type Builder struct {
 	app           *config.Application // Resolved application (nil in legacy mode)
 	env           *config.Environment // Resolved environment
 	includeAll    *bool               // CLI override for include_all setting
-	clientFactory ClientFactory       // Factory for creating backend-specific clients
-	activeBackend string              // Resolved backend name for the primary client
+	clientFactory ClientFactory       // Factory for creating cross-backend clients
+	activeBackend string              // Backend type of the primary client
 }
 
 // NewBuilder creates a new environment builder.
@@ -56,17 +54,11 @@ func (b *Builder) WithIncludeAll(val *bool) *Builder {
 	return b
 }
 
-// WithClientFactory sets the factory function for creating backend-specific clients.
+// WithClientFactory sets the client factory and active backend for cross-backend includes.
 // Returns the builder for method chaining.
-func (b *Builder) WithClientFactory(f ClientFactory) *Builder {
-	b.clientFactory = f
-	return b
-}
-
-// WithBackend sets the resolved backend name for the primary client.
-// Returns the builder for method chaining.
-func (b *Builder) WithBackend(backend string) *Builder {
-	b.activeBackend = backend
+func (b *Builder) WithClientFactory(factory ClientFactory, activeBackend string) *Builder {
+	b.clientFactory = factory
+	b.activeBackend = activeBackend
 	return b
 }
 
@@ -82,6 +74,8 @@ func (b *Builder) shouldIncludeAll() bool {
 // Build resolves all environment variables according to precedence rules.
 // Default (mappings-only): includes (specific) -> mappings -> overrides
 // With include_all: primary secret -> includes -> mappings -> overrides
+//
+//nolint:revive // Build orchestrates multiple resolution steps sequentially
 func (b *Builder) Build(ctx context.Context, overrides map[string]string) ([]Entry, error) {
 	entries := make(map[string]Entry)
 
@@ -107,15 +101,19 @@ func (b *Builder) Build(ctx context.Context, overrides map[string]string) ([]Ent
 		}
 	}
 
-	// 2. Process global include entries (in order)
-	if err := b.processIncludes(ctx, entries, b.config.Include, includeAll); err != nil {
-		return nil, err
+	// 2. Process global include entries for the active environment
+	if globalIncludes, ok := b.config.Include[b.envName]; ok {
+		if err := b.processIncludes(ctx, entries, globalIncludes, includeAll); err != nil {
+			return nil, err
+		}
 	}
 
-	// 3. Process app-level include entries (if in application mode)
-	if b.app != nil && len(b.app.Include) > 0 {
-		if err := b.processIncludes(ctx, entries, b.app.Include, includeAll); err != nil {
-			return nil, err
+	// 3. Process app-level include entries for the active environment
+	if b.app != nil {
+		if appIncludes, ok := b.app.Include[b.envName]; ok {
+			if err := b.processIncludes(ctx, entries, appIncludes, includeAll); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -170,6 +168,31 @@ func (b *Builder) resolveConfig() error {
 	return nil
 }
 
+// resolveIncludeBackend determines the backend type for an include entry.
+// Returns empty string if no backend is specified (use primary client).
+func resolveIncludeBackend(inc config.IncludeEntry) string {
+	if inc.OnePass != nil {
+		return config.Backend1Pass
+	}
+	if inc.AWS != nil {
+		return config.BackendAWS
+	}
+	return ""
+}
+
+// clientForInclude returns the appropriate secrets client for an include entry.
+// If the include specifies a different backend than the primary, uses the client factory.
+func (b *Builder) clientForInclude(ctx context.Context, inc config.IncludeEntry) (secrets.Client, error) {
+	incBackend := resolveIncludeBackend(inc)
+	if incBackend == "" || incBackend == b.activeBackend {
+		return b.secrets, nil
+	}
+	if b.clientFactory == nil {
+		return b.secrets, nil
+	}
+	return b.clientFactory(ctx, incBackend, inc.AWS, inc.OnePass)
+}
+
 // processIncludes processes a list of include entries.
 // When includeAll is false, entries without a specific key will error.
 //
@@ -181,9 +204,14 @@ func (b *Builder) processIncludes(
 	includeAll bool,
 ) error {
 	for _, inc := range includes {
+		client, err := b.clientForInclude(ctx, inc)
+		if err != nil {
+			return err
+		}
+
 		if inc.Key != "" {
 			// Extract specific key
-			value, err := b.secrets.GetSecretKey(ctx, inc.Secret, inc.Key)
+			value, err := client.GetSecretKey(ctx, inc.Secret, inc.Key)
 			if err != nil {
 				return err
 			}
@@ -201,7 +229,7 @@ func (b *Builder) processIncludes(
 			if !includeAll {
 				return &errors.IncludeAllRequiredError{Secret: inc.Secret}
 			}
-			incSecrets, err := b.secrets.GetSecret(ctx, inc.Secret)
+			incSecrets, err := client.GetSecret(ctx, inc.Secret)
 			if err != nil {
 				return err
 			}

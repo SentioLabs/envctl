@@ -100,9 +100,9 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		if app != nil {
 			totalMappings += len(app.Mapping)
 		}
-		specificIncludes := countSpecificIncludes(cfg.Include)
+		specificIncludes := countSpecificIncludesMap(cfg.Include)
 		if app != nil {
-			specificIncludes += countSpecificIncludes(app.Include)
+			specificIncludes += countSpecificIncludesMap(app.Include)
 		}
 
 		if totalMappings == 0 && specificIncludes == 0 {
@@ -112,9 +112,9 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 
 		// Check for include entries without key
-		hasWildcardIncludes := hasIncludeAllEntries(cfg.Include)
+		hasWildcardIncludes := hasIncludeAllEntriesMap(cfg.Include)
 		if app != nil && !hasWildcardIncludes {
-			hasWildcardIncludes = hasIncludeAllEntries(app.Include)
+			hasWildcardIncludes = hasIncludeAllEntriesMap(app.Include)
 		}
 		if hasWildcardIncludes {
 			fmt.Fprintln(os.Stderr, "⚠ Warning: include entries without 'key' will fail")
@@ -140,11 +140,15 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	totalKeys += len(secrets)
 
 	// Test global include secrets
-	totalKeys += validateIncludes(ctx, client, cfg.Include, "global")
+	for envKey, includes := range cfg.Include {
+		totalKeys += validateIncludes(ctx, client, includes, "global/"+envKey)
+	}
 
 	// Test app-level include secrets
-	if app != nil && len(app.Include) > 0 {
-		totalKeys += validateIncludes(ctx, client, app.Include, "app")
+	if app != nil {
+		for envKey, includes := range app.Include {
+			totalKeys += validateIncludes(ctx, client, includes, "app/"+envKey)
+		}
 	}
 
 	// Test global mapping references
@@ -223,22 +227,26 @@ func validateMapping(
 	return nil
 }
 
-// countSpecificIncludes counts include entries that specify a key.
-func countSpecificIncludes(includes []config.IncludeEntry) int {
+// countSpecificIncludesMap counts include entries that specify a key across all environments.
+func countSpecificIncludesMap(includes map[string][]config.IncludeEntry) int {
 	count := 0
-	for _, inc := range includes {
-		if inc.Key != "" {
-			count++
+	for _, entries := range includes {
+		for _, inc := range entries {
+			if inc.Key != "" {
+				count++
+			}
 		}
 	}
 	return count
 }
 
-// hasIncludeAllEntries checks if any include entry doesn't specify a key.
-func hasIncludeAllEntries(includes []config.IncludeEntry) bool {
-	for _, inc := range includes {
-		if inc.Key == "" {
-			return true
+// hasIncludeAllEntriesMap checks if any include entry doesn't specify a key across all environments.
+func hasIncludeAllEntriesMap(includes map[string][]config.IncludeEntry) bool {
+	for _, entries := range includes {
+		for _, inc := range entries {
+			if inc.Key == "" {
+				return true
+			}
 		}
 	}
 	return false

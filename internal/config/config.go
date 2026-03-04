@@ -3,6 +3,7 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -29,27 +30,27 @@ const (
 //
 //nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type Config struct {
-	Version            int                     `yaml:"version"`
-	DefaultApplication string                  `yaml:"default_application,omitempty"`
-	DefaultEnvironment string                  `yaml:"default_environment,omitempty"`
-	IncludeAll         *bool                   `yaml:"include_all,omitempty"`
-	AWS                *AWSConfig              `yaml:"aws,omitempty"`
-	OnePass            *OnePassConfig          `yaml:"1pass,omitempty"`
-	Applications       map[string]*Application `yaml:"applications,omitempty"`
-	Environments       map[string]Environment  `yaml:"environments,omitempty"`
+	Version            int                       `yaml:"version"`
+	DefaultApplication string                    `yaml:"default_application,omitempty"`
+	DefaultEnvironment string                    `yaml:"default_environment,omitempty"`
+	IncludeAll         *bool                     `yaml:"include_all,omitempty"`
+	AWS                *AWSConfig                `yaml:"aws,omitempty"`
+	OnePass            *OnePassConfig            `yaml:"1pass,omitempty"`
+	Applications       map[string]*Application   `yaml:"applications,omitempty"`
+	Environments       map[string]Environment    `yaml:"environments,omitempty"`
 	Include            map[string][]IncludeEntry `yaml:"include,omitempty"`
-	Mapping            map[string]string       `yaml:"mapping,omitempty"`
-	Cache              *CacheConfig            `yaml:"cache,omitempty"`
+	Mapping            map[string]string         `yaml:"mapping,omitempty"`
+	Cache              *CacheConfig              `yaml:"cache,omitempty"`
 }
 
 // Application represents an application with its environment configurations.
 //
 //nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type Application struct {
-	Environments map[string]Environment `yaml:",inline"`
+	Environments map[string]Environment    `yaml:",inline"`
 	Include      map[string][]IncludeEntry `yaml:"include,omitempty"`
-	Mapping      map[string]string      `yaml:"mapping,omitempty"`
-	IncludeAll   *bool                  `yaml:"include_all,omitempty"`
+	Mapping      map[string]string         `yaml:"mapping,omitempty"`
+	IncludeAll   *bool                     `yaml:"include_all,omitempty"`
 }
 
 // CacheConfig represents cache configuration.
@@ -82,10 +83,9 @@ type Environment struct {
 }
 
 // IncludeEntry represents an additional secret to include.
-//
-//nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type IncludeEntry struct {
-	Secret  string         `yaml:"secret"` //nolint:gosec // G117: field name refers to a secret reference, not credentials
+	//nolint:gosec // G117: field name refers to a secret reference, not credentials
+	Secret  string         `yaml:"secret"`
 	Key     string         `yaml:"key,omitempty"`
 	As      string         `yaml:"as,omitempty"`
 	AWS     *AWSConfig     `yaml:"aws,omitempty"`
@@ -153,7 +153,7 @@ func FindConfigFrom(startPath string) (string, error) {
 
 // Validate checks the config for required fields and valid values.
 //
-//nolint:revive // Config validation requires checking multiple conditions in sequence
+//nolint:revive,gocognit // Config validation requires checking multiple conditions in sequence
 func (c *Config) Validate(path string) error {
 	if c.Version != CurrentVersion {
 		return &errors.ConfigError{
@@ -252,8 +252,9 @@ func (c *Config) Validate(path string) error {
 			for _, entry := range entries {
 				if entry.AWS != nil && entry.OnePass != nil {
 					return &errors.ConfigError{
-						Path:    path,
-						Message: "application " + appName + " include entry for environment " + envName + " cannot specify both 'aws' and '1pass'",
+						Path: path,
+						Message: "application " + appName + " include entry for environment " +
+							envName + " cannot specify both 'aws' and '1pass'",
 					}
 				}
 			}
@@ -267,6 +268,32 @@ func (c *Config) Validate(path string) error {
 				return &errors.ConfigError{
 					Path:    path,
 					Message: "application " + appName + " environment " + envName + " cannot specify both 'aws' and '1pass'",
+				}
+			}
+		}
+	}
+
+	// Validate include entries have required secret field
+	for envKey, entries := range c.Include {
+		for i, inc := range entries {
+			if inc.Secret == "" {
+				return &errors.ConfigError{
+					Path:    path,
+					Message: fmt.Sprintf("include[%s][%d] is missing required 'secret' field", envKey, i),
+				}
+			}
+		}
+	}
+
+	// Validate application include entries have required secret field
+	for appName, app := range c.Applications {
+		for envKey, entries := range app.Include {
+			for i, inc := range entries {
+				if inc.Secret == "" {
+					return &errors.ConfigError{
+						Path:    path,
+						Message: fmt.Sprintf("application %s include[%s][%d] is missing required 'secret' field", appName, envKey, i),
+					}
 				}
 			}
 		}

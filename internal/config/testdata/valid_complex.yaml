@@ -1,0 +1,17 @@
+version: 1
+default_environment: dev
+environments:
+  dev:
+    secret: myapp/dev
+    aws:
+      region: us-west-2
+  staging:
+    secret: myapp/staging
+include:
+  dev:
+    - secret: shared/datadog
+    - secret: shared/stripe
+      key: api_key
+      as: STRIPE_KEY
+mapping:
+  DB_URL: myapp/dev#database_url

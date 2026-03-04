@@ -7,148 +7,87 @@ import (
 	"testing"
 )
 
+// loadFixture reads a YAML fixture file from testdata/ and writes it to a temp
+// directory as .envctl.yaml, returning the path to the temp config file.
+func loadFixture(t *testing.T, name string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatalf("failed to read fixture %s: %v", name, err)
+	}
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ConfigFileName)
+	if err := os.WriteFile(configPath, data, 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+	return configPath
+}
+
 func TestLoad(t *testing.T) {
 	tests := []struct {
 		name    string
-		content string
+		fixture string
 		wantErr bool
 		errMsg  string
 	}{
 		{
-			name: "valid simple config",
-			content: `version: 1
-default_environment: dev
-environments:
-  dev:
-    secret: myapp/dev
-`,
+			name:    "valid simple config",
+			fixture: "valid_simple.yaml",
 			wantErr: false,
 		},
 		{
-			name: "valid complex config",
-			content: `version: 1
-default_environment: dev
-environments:
-  dev:
-    secret: myapp/dev
-    aws:
-      region: us-west-2
-  staging:
-    secret: myapp/staging
-include:
-  dev:
-    - secret: shared/datadog
-    - secret: shared/stripe
-      key: api_key
-      as: STRIPE_KEY
-mapping:
-  DB_URL: myapp/dev#database_url
-`,
+			name:    "valid complex config",
+			fixture: "valid_complex.yaml",
 			wantErr: false,
 		},
 		{
-			name: "invalid version",
-			content: `version: 2
-environments:
-  dev:
-    secret: myapp/dev
-`,
+			name:    "invalid version",
+			fixture: "invalid_version.yaml",
 			wantErr: true,
 			errMsg:  "unsupported config version",
 		},
 		{
-			name: "missing environments",
-			content: `version: 1
-`,
+			name:    "missing environments",
+			fixture: "missing_environments.yaml",
 			wantErr: true,
 			errMsg:  "no applications or environments defined",
 		},
 		{
-			name: "missing secret in environment",
-			content: `version: 1
-environments:
-  dev:
-    aws:
-      region: us-west-2
-`,
+			name:    "missing secret in environment",
+			fixture: "missing_secret.yaml",
 			wantErr: true,
 			errMsg:  "missing required 'secret' field",
 		},
 		{
-			name: "invalid default_environment",
-			content: `version: 1
-default_environment: prod
-environments:
-  dev:
-    secret: myapp/dev
-`,
+			name:    "invalid default_environment",
+			fixture: "invalid_default_env.yaml",
 			wantErr: true,
 			errMsg:  "references undefined environment",
 		},
 		{
-			name: "unknown field",
-			content: `version: 1
-environments:
-  dev:
-    secret: myapp/dev
-unknownField: true
-`,
+			name:    "unknown field",
+			fixture: "unknown_field.yaml",
 			wantErr: true,
 		},
 		{
-			name: "valid config with 1pass backend",
-			content: `version: 1
-1pass:
-  vault: dev-vault
-  account: my-account
-environments:
-  dev:
-    secret: myapp/dev
-    1pass:
-      vault: env-vault
-`,
+			name:    "valid config with 1pass backend",
+			fixture: "valid_1pass.yaml",
 			wantErr: false,
 		},
 		{
-			name: "valid config with per-env backends",
-			content: `version: 1
-environments:
-  dev:
-    secret: myapp/dev
-    aws:
-      region: us-west-2
-  staging:
-    secret: myapp/staging
-    1pass:
-      vault: staging-vault
-`,
+			name:    "valid config with per-env backends",
+			fixture: "valid_per_env_backends.yaml",
 			wantErr: false,
 		},
 		{
-			name: "invalid both backends at global level",
-			content: `version: 1
-aws:
-  region: us-east-1
-1pass:
-  vault: my-vault
-environments:
-  dev:
-    secret: myapp/dev
-`,
+			name:    "invalid both backends at global level",
+			fixture: "invalid_both_backends_global.yaml",
 			wantErr: true,
 			errMsg:  "cannot specify both 'aws' and '1pass' at the global level",
 		},
 		{
-			name: "invalid both backends on environment",
-			content: `version: 1
-environments:
-  dev:
-    secret: myapp/dev
-    aws:
-      region: us-west-2
-    1pass:
-      vault: my-vault
-`,
+			name:    "invalid both backends on environment",
+			fixture: "invalid_both_backends_env.yaml",
 			wantErr: true,
 			errMsg:  "cannot specify both 'aws' and '1pass'",
 		},
@@ -156,12 +95,7 @@ environments:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create temp file
-			tmpDir := t.TempDir()
-			configPath := filepath.Join(tmpDir, ConfigFileName)
-			if err := os.WriteFile(configPath, []byte(tt.content), 0o600); err != nil {
-				t.Fatalf("failed to write test config: %v", err)
-			}
+			configPath := loadFixture(t, tt.fixture)
 
 			cfg, err := Load(configPath)
 			if tt.wantErr {
@@ -193,14 +127,13 @@ func TestFindConfigFrom(t *testing.T) {
 		t.Fatalf("failed to create dirs: %v", err)
 	}
 
-	// Create config in the root
+	// Copy fixture to the root of temp dir
+	data, err := os.ReadFile(filepath.Join("testdata", "find_config.yaml"))
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
 	configPath := filepath.Join(tmpDir, ConfigFileName)
-	content := `version: 1
-environments:
-  dev:
-    secret: test/dev
-`
-	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+	if err := os.WriteFile(configPath, data, 0o600); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
 
@@ -272,6 +205,8 @@ func TestGetEnvironment(t *testing.T) {
 		})
 	}
 }
+
+func boolPtr(v bool) *bool { return &v }
 
 func containsSubstring(s, substr string) bool {
 	if len(s) < len(substr) {
@@ -465,27 +400,10 @@ func TestResolveOnePassConfig(t *testing.T) {
 	}
 }
 
+//nolint:gocognit,revive // Comprehensive include parsing tests
 func TestEnvKeyedIncludes(t *testing.T) {
 	t.Run("parses env-keyed includes correctly", func(t *testing.T) {
-		content := `version: 1
-environments:
-  dev:
-    secret: myapp/dev
-include:
-  dev:
-    - secret: shared/datadog
-    - secret: shared/stripe
-      key: api_key
-      as: STRIPE_KEY
-  staging:
-    - secret: shared/monitoring
-`
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, ConfigFileName)
-		if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
-			t.Fatalf("failed to write test config: %v", err)
-		}
-
+		configPath := loadFixture(t, "env_keyed_includes.yaml")
 		cfg, err := Load(configPath)
 		if err != nil {
 			t.Fatalf("Load() unexpected error: %v", err)
@@ -522,23 +440,7 @@ include:
 	})
 
 	t.Run("include entry with aws config parses correctly", func(t *testing.T) {
-		content := `version: 1
-environments:
-  dev:
-    secret: myapp/dev
-include:
-  dev:
-    - secret: shared/datadog
-      aws:
-        region: eu-west-1
-        profile: datadog-profile
-`
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, ConfigFileName)
-		if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
-			t.Fatalf("failed to write test config: %v", err)
-		}
-
+		configPath := loadFixture(t, "include_with_aws.yaml")
 		cfg, err := Load(configPath)
 		if err != nil {
 			t.Fatalf("Load() unexpected error: %v", err)
@@ -560,23 +462,7 @@ include:
 	})
 
 	t.Run("include entry with 1pass config parses correctly", func(t *testing.T) {
-		content := `version: 1
-environments:
-  dev:
-    secret: myapp/dev
-include:
-  dev:
-    - secret: shared/creds
-      1pass:
-        vault: shared-vault
-        account: team-account
-`
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, ConfigFileName)
-		if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
-			t.Fatalf("failed to write test config: %v", err)
-		}
-
+		configPath := loadFixture(t, "include_with_1pass.yaml")
 		cfg, err := Load(configPath)
 		if err != nil {
 			t.Fatalf("Load() unexpected error: %v", err)
@@ -598,30 +484,38 @@ include:
 	})
 
 	t.Run("include entry with both aws and 1pass fails validation", func(t *testing.T) {
-		content := `version: 1
-environments:
-  dev:
-    secret: myapp/dev
-include:
-  dev:
-    - secret: shared/creds
-      aws:
-        region: us-east-1
-      1pass:
-        vault: shared-vault
-`
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, ConfigFileName)
-		if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
-			t.Fatalf("failed to write test config: %v", err)
-		}
-
+		configPath := loadFixture(t, "include_both_backends.yaml")
 		_, err := Load(configPath)
 		if err == nil {
 			t.Fatal("Load() expected error for include with both aws and 1pass, got nil")
 		}
 		if !containsSubstring(err.Error(), "cannot specify both 'aws' and '1pass'") {
-			t.Errorf("Load() error = %q, want error containing %q", err.Error(), "cannot specify both 'aws' and '1pass'")
+			t.Errorf("Load() error = %q, want containing %q",
+				err.Error(), "cannot specify both 'aws' and '1pass'")
+		}
+	})
+}
+
+func TestValidateIncludeEntries(t *testing.T) {
+	t.Run("global include entry with empty secret", func(t *testing.T) {
+		configPath := loadFixture(t, "include_empty_secret.yaml")
+		_, err := Load(configPath)
+		if err == nil {
+			t.Fatal("Load() expected error, got nil")
+		}
+		if !containsSubstring(err.Error(), "missing required 'secret' field") {
+			t.Errorf("Load() error = %q, want error containing %q", err.Error(), "missing required 'secret' field")
+		}
+	})
+
+	t.Run("application include entry with empty secret", func(t *testing.T) {
+		configPath := loadFixture(t, "app_include_empty_secret.yaml")
+		_, err := Load(configPath)
+		if err == nil {
+			t.Fatal("Load() expected error, got nil")
+		}
+		if !containsSubstring(err.Error(), "missing required 'secret' field") {
+			t.Errorf("Load() error = %q, want error containing %q", err.Error(), "missing required 'secret' field")
 		}
 	})
 }
@@ -641,57 +535,57 @@ func TestShouldIncludeAll(t *testing.T) {
 		},
 		{
 			name:       "global_true",
-			config:     &Config{Version: 1, IncludeAll: new(true)},
+			config:     &Config{Version: 1, IncludeAll: boolPtr(true)},
 			wantResult: true,
 		},
 		{
 			name:       "global_false_explicit",
-			config:     &Config{Version: 1, IncludeAll: new(false)},
+			config:     &Config{Version: 1, IncludeAll: boolPtr(false)},
 			wantResult: false,
 		},
 		{
 			name:       "app_overrides_global_true",
-			config:     &Config{Version: 1, IncludeAll: new(false)},
-			app:        &Application{IncludeAll: new(true)},
+			config:     &Config{Version: 1, IncludeAll: boolPtr(false)},
+			app:        &Application{IncludeAll: boolPtr(true)},
 			wantResult: true,
 		},
 		{
 			name:       "app_overrides_global_false",
-			config:     &Config{Version: 1, IncludeAll: new(true)},
-			app:        &Application{IncludeAll: new(false)},
+			config:     &Config{Version: 1, IncludeAll: boolPtr(true)},
+			app:        &Application{IncludeAll: boolPtr(false)},
 			wantResult: false,
 		},
 		{
 			name:       "env_overrides_app_true",
-			config:     &Config{Version: 1, IncludeAll: new(false)},
-			app:        &Application{IncludeAll: new(false)},
-			env:        &Environment{Secret: "test", IncludeAll: new(true)},
+			config:     &Config{Version: 1, IncludeAll: boolPtr(false)},
+			app:        &Application{IncludeAll: boolPtr(false)},
+			env:        &Environment{Secret: "test", IncludeAll: boolPtr(true)},
 			wantResult: true,
 		},
 		{
 			name:       "env_overrides_app_false",
-			config:     &Config{Version: 1, IncludeAll: new(true)},
-			app:        &Application{IncludeAll: new(true)},
-			env:        &Environment{Secret: "test", IncludeAll: new(false)},
+			config:     &Config{Version: 1, IncludeAll: boolPtr(true)},
+			app:        &Application{IncludeAll: boolPtr(true)},
+			env:        &Environment{Secret: "test", IncludeAll: boolPtr(false)},
 			wantResult: false,
 		},
 		{
 			name:       "env_overrides_global_no_app",
-			config:     &Config{Version: 1, IncludeAll: new(false)},
-			env:        &Environment{Secret: "test", IncludeAll: new(true)},
+			config:     &Config{Version: 1, IncludeAll: boolPtr(false)},
+			env:        &Environment{Secret: "test", IncludeAll: boolPtr(true)},
 			wantResult: true,
 		},
 		{
 			name:       "app_nil_inherits_global",
-			config:     &Config{Version: 1, IncludeAll: new(true)},
+			config:     &Config{Version: 1, IncludeAll: boolPtr(true)},
 			app:        nil,
 			env:        &Environment{Secret: "test"},
 			wantResult: true,
 		},
 		{
 			name:       "env_nil_inherits_app",
-			config:     &Config{Version: 1, IncludeAll: new(false)},
-			app:        &Application{IncludeAll: new(true)},
+			config:     &Config{Version: 1, IncludeAll: boolPtr(false)},
+			app:        &Application{IncludeAll: boolPtr(true)},
 			env:        nil,
 			wantResult: true,
 		},

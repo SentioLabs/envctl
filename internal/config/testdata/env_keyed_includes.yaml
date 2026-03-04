@@ -1,0 +1,12 @@
+version: 1
+environments:
+  dev:
+    secret: myapp/dev
+include:
+  dev:
+    - secret: shared/datadog
+    - secret: shared/stripe
+      key: api_key
+      as: STRIPE_KEY
+  staging:
+    - secret: shared/monitoring
