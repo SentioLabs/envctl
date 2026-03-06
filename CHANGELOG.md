@@ -2,6 +2,15 @@
 
 All notable changes to envctl will be documented in this file.
 
+## [0.4.0](https://github.com/SentioLabs/envctl/compare/v0.3.1...v0.4.0) (2026-03-06)
+
+
+### Features
+
+* **config,env:** env-filtered includes, cross-backend resolution, and fixture migration ([ddab1f9](https://github.com/SentioLabs/envctl/commit/ddab1f95854b297fe0df5d4bce9f8bfdd5cc5120))
+* **config,env:** env-keyed includes with backend qualifiers and ClientFactory ([930001e](https://github.com/SentioLabs/envctl/commit/930001e13ccdcc170258cf84804b0feb674483fa))
+* **config,env:** replace include maps with ordered source lists per environment ([dcb2e6a](https://github.com/SentioLabs/envctl/commit/dcb2e6ad062ed4100c6f8864bf06e398e80bd007))
+
 ## [0.3.1](https://github.com/SentioLabs/envctl/compare/v0.3.0...v0.3.1) (2026-03-04)
 
 
