@@ -206,14 +206,17 @@ func validateSources(
 }
 
 // clientForValidate returns the appropriate secrets client for a source entry.
-// If the source has a backend qualifier (aws: or 1pass:) different from the primary,
-// a new client is created for that backend.
+// If the source has a backend qualifier (aws:, 1pass:, or backend:) different from
+// the primary, a new client is created for that backend.
 func clientForValidate(
 	ctx context.Context,
 	cfg *config.Config,
 	primaryClient secrets.Client,
 	src config.IncludeEntry,
 ) (secrets.Client, error) {
+	// Promote backend field to config struct if not already set
+	config.PromoteBackend(&src)
+
 	// No backend qualifier — use primary client
 	if src.AWS == nil && src.OnePass == nil {
 		return primaryClient, nil

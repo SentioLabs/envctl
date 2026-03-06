@@ -628,6 +628,140 @@ func TestBuilder_Build_SourceWithKeysAsOptional(t *testing.T) {
 	assert.Equal(t, "https://api.example.com", entryMap["URL"])
 }
 
+func TestBuilder_Build_BackendFieldAWS(t *testing.T) {
+	// Source with backend: aws should create a separate AWS client
+	ctx := t.Context()
+	primaryClient := mocks.NewMockClient(t)
+	awsClient := mocks.NewMockClient(t)
+
+	cfg := &config.Config{
+		Version:            1,
+		DefaultEnvironment: "dev",
+		IncludeAll:         boolPtr(false),
+		OnePass:            &config.OnePassConfig{Vault: "Dev"},
+		Environments: map[string]config.Environment{
+			"dev": {
+				Sources: []config.IncludeEntry{
+					{Secret: "My App Dev", OnePass: &config.OnePassConfig{Vault: "Development"}},
+					{
+						Secret:  "dev/app/secrets",
+						Backend: config.BackendAWS,
+						Key:     "api_key",
+						As:      "API_KEY",
+					},
+				},
+				OnePass: &config.OnePassConfig{Vault: "Development"},
+			},
+		},
+	}
+
+	awsClient.On("GetSecretKey", mock.Anything, "dev/app/secrets", "api_key").
+		Return("aws-api-key", nil)
+
+	builder := NewBuilder(primaryClient, cfg, "", "dev")
+	builder.newClient = func(
+		_ context.Context, opts secrets.Options,
+	) (secrets.Client, error) {
+		assert.NotNil(t, opts.Env)
+		assert.NotNil(t, opts.Env.AWS, "backend: aws should promote to AWS config")
+		return awsClient, nil
+	}
+
+	entries, err := builder.Build(ctx, nil)
+
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
+	entryMap := ToMap(entries)
+	assert.Equal(t, "aws-api-key", entryMap["API_KEY"])
+}
+
+func TestBuilder_Build_BackendField1Pass(t *testing.T) {
+	// Source with backend: 1pass should create a separate 1Password client
+	ctx := t.Context()
+	primaryClient := mocks.NewMockClient(t)
+	onepassClient := mocks.NewMockClient(t)
+
+	cfg := &config.Config{
+		Version:            1,
+		DefaultEnvironment: "dev",
+		IncludeAll:         boolPtr(false),
+		AWS:                &config.AWSConfig{Region: "us-east-1"},
+		Environments: map[string]config.Environment{
+			"dev": {
+				Sources: []config.IncludeEntry{
+					{Secret: "myapp/dev", AWS: &config.AWSConfig{Region: "us-east-1"}},
+					{
+						Secret:  "My Shared Secret",
+						Backend: config.Backend1Pass,
+						Key:     "api_key",
+						As:      "SHARED_KEY",
+					},
+				},
+				AWS: &config.AWSConfig{Region: "us-east-1"},
+			},
+		},
+	}
+
+	onepassClient.On("GetSecretKey", mock.Anything, "My Shared Secret", "api_key").
+		Return("1pass-shared-key", nil)
+
+	builder := NewBuilder(primaryClient, cfg, "", "dev")
+	builder.newClient = func(
+		_ context.Context, opts secrets.Options,
+	) (secrets.Client, error) {
+		assert.NotNil(t, opts.Env)
+		assert.NotNil(t, opts.Env.OnePass, "backend: 1pass should promote to OnePass config")
+		return onepassClient, nil
+	}
+
+	entries, err := builder.Build(ctx, nil)
+
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
+	entryMap := ToMap(entries)
+	assert.Equal(t, "1pass-shared-key", entryMap["SHARED_KEY"])
+}
+
+func TestBuilder_Build_NoBackendFieldUsesPrimaryClient(t *testing.T) {
+	// Regression: source without backend field or config block should use primary client
+	ctx := t.Context()
+	primaryClient := mocks.NewMockClient(t)
+
+	cfg := &config.Config{
+		Version:            1,
+		DefaultEnvironment: "dev",
+		IncludeAll:         boolPtr(false),
+		Environments: map[string]config.Environment{
+			"dev": {
+				Sources: []config.IncludeEntry{
+					{Secret: "my-app/dev"},
+					{Secret: "shared/common", Key: "token", As: "TOKEN"},
+				},
+			},
+		},
+	}
+
+	primaryClient.On("GetSecretKey", mock.Anything, "shared/common", "token").
+		Return("primary-token", nil)
+
+	newClientCalled := false
+	builder := NewBuilder(primaryClient, cfg, "", "dev")
+	builder.newClient = func(
+		_ context.Context, _ secrets.Options,
+	) (secrets.Client, error) {
+		newClientCalled = true
+		return nil, nil //nolint:nilnil // Test stub
+	}
+
+	entries, err := builder.Build(ctx, nil)
+
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
+	assert.False(t, newClientCalled, "newClient should not be called when no backend field or config block")
+	entryMap := ToMap(entries)
+	assert.Equal(t, "primary-token", entryMap["TOKEN"])
+}
+
 func TestToMap(t *testing.T) {
 	entries := []Entry{
 		{Key: "KEY1", Value: "value1", Source: "secret1"},

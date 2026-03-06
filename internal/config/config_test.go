@@ -80,16 +80,33 @@ func TestLoad(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "invalid both backends at global level",
-			fixture: "invalid_both_backends_global.yaml",
-			wantErr: true,
-			errMsg:  "cannot specify both 'aws' and '1pass' at the global level",
+			name:    "valid config with both global backends",
+			fixture: "valid_both_backends_global.yaml",
+			wantErr: false,
 		},
 		{
 			name:    "invalid both backends on environment",
 			fixture: "invalid_both_backends_env.yaml",
 			wantErr: true,
 			errMsg:  "cannot specify both 'aws' and '1pass'",
+		},
+		{
+			name:    "invalid both global backends without default_backend",
+			fixture: "invalid_both_backends_no_default.yaml",
+			wantErr: true,
+			errMsg:  "default_backend is required",
+		},
+		{
+			name:    "invalid default_backend value",
+			fixture: "invalid_default_backend_value.yaml",
+			wantErr: true,
+			errMsg:  "invalid default_backend value",
+		},
+		{
+			name:    "invalid default_backend without both backends",
+			fixture: "invalid_default_backend_without_both.yaml",
+			wantErr: true,
+			errMsg:  "default_backend is only valid when both",
 		},
 		{
 			name:    "valid list format",
@@ -281,6 +298,33 @@ func TestResolveBackend(t *testing.T) {
 			config: &Config{Version: 1, OnePass: &OnePassConfig{Vault: "Dev"}},
 			env:    nil,
 			want:   Backend1Pass,
+		},
+		{
+			name: "both global backends default_backend 1pass resolves to 1pass",
+			config: &Config{
+				Version: 1, AWS: &AWSConfig{Region: "us-east-1"},
+				OnePass: &OnePassConfig{Vault: "Dev"}, DefaultBackend: Backend1Pass,
+			},
+			env:  envPtr(NewEnvironment(IncludeEntry{Secret: "test"})),
+			want: Backend1Pass,
+		},
+		{
+			name: "both global backends default_backend aws resolves to aws",
+			config: &Config{
+				Version: 1, AWS: &AWSConfig{Region: "us-east-1"},
+				OnePass: &OnePassConfig{Vault: "Dev"}, DefaultBackend: BackendAWS,
+			},
+			env:  envPtr(NewEnvironment(IncludeEntry{Secret: "test"})),
+			want: BackendAWS,
+		},
+		{
+			name: "both global backends env backend aws overrides default_backend 1pass",
+			config: &Config{
+				Version: 1, AWS: &AWSConfig{Region: "us-east-1"},
+				OnePass: &OnePassConfig{Vault: "Dev"}, DefaultBackend: Backend1Pass,
+			},
+			env:  envPtr(NewEnvironment(IncludeEntry{Secret: "test", Backend: BackendAWS})),
+			want: BackendAWS,
 		},
 	}
 
@@ -621,6 +665,103 @@ func TestMixedFormat(t *testing.T) {
 		}
 		if devEnv.Sources[1].Key != "api_key" {
 			t.Errorf("dev source[1] key = %q, want %q", devEnv.Sources[1].Key, "api_key")
+		}
+	})
+}
+
+//nolint:revive // Comprehensive backend field parsing tests
+func TestBackendField(t *testing.T) {
+	t.Run("backend aws parses correctly on non-first source", func(t *testing.T) {
+		configPath := loadFixture(t, "backend_field_aws.yaml")
+		cfg, err := Load(configPath)
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+
+		devEnv := cfg.Environments["dev"]
+		if len(devEnv.Sources) != 2 {
+			t.Fatalf("expected 2 sources, got %d", len(devEnv.Sources))
+		}
+		src := devEnv.Sources[1]
+		if src.Backend != BackendAWS {
+			t.Errorf("expected backend = %q, got %q", BackendAWS, src.Backend)
+		}
+		// Non-first sources are NOT promoted at parse time; promotion
+		// happens at resolution time in clientForInclude/clientForValidate.
+		if src.Key != "api_key" {
+			t.Errorf("expected key = %q, got %q", "api_key", src.Key)
+		}
+	})
+
+	t.Run("backend 1pass parses correctly on non-first source", func(t *testing.T) {
+		configPath := loadFixture(t, "backend_field_1pass.yaml")
+		cfg, err := Load(configPath)
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+
+		devEnv := cfg.Environments["dev"]
+		src := devEnv.Sources[1]
+		if src.Backend != Backend1Pass {
+			t.Errorf("expected backend = %q, got %q", Backend1Pass, src.Backend)
+		}
+	})
+
+	t.Run("backend field conflict with opposite block", func(t *testing.T) {
+		configPath := loadFixture(t, "backend_field_conflict.yaml")
+		_, err := Load(configPath)
+		if err == nil {
+			t.Fatal("Load() expected error, got nil")
+		}
+		if !containsSubstring(err.Error(), "has backend") {
+			t.Errorf("Load() error = %q, want error about backend conflict", err.Error())
+		}
+	})
+
+	t.Run("invalid backend value", func(t *testing.T) {
+		configPath := loadFixture(t, "backend_field_invalid.yaml")
+		_, err := Load(configPath)
+		if err == nil {
+			t.Fatal("Load() expected error, got nil")
+		}
+		if !containsSubstring(err.Error(), "invalid backend value") {
+			t.Errorf("Load() error = %q, want error about invalid backend value", err.Error())
+		}
+	})
+
+	t.Run("legacy mapping format with backend field", func(t *testing.T) {
+		configPath := loadFixture(t, "backend_field_legacy.yaml")
+		cfg, err := Load(configPath)
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+
+		devEnv := cfg.Environments["dev"]
+		if devEnv.AWS == nil {
+			t.Fatal("expected env.AWS to be promoted from backend field")
+		}
+		if devEnv.Sources[0].Backend != BackendAWS {
+			t.Errorf("expected source backend = %q, got %q", BackendAWS, devEnv.Sources[0].Backend)
+		}
+	})
+}
+
+func TestResolveBackend_WithBackendField(t *testing.T) {
+	t.Run("backend aws on first source resolves to AWS", func(t *testing.T) {
+		cfg := &Config{Version: 1}
+		env := envPtr(NewEnvironment(IncludeEntry{Secret: "test", Backend: BackendAWS}))
+		got := cfg.ResolveBackend(env)
+		if got != BackendAWS {
+			t.Errorf("ResolveBackend() = %q, want %q", got, BackendAWS)
+		}
+	})
+
+	t.Run("backend 1pass on first source resolves to 1Pass", func(t *testing.T) {
+		cfg := &Config{Version: 1}
+		env := envPtr(NewEnvironment(IncludeEntry{Secret: "test", Backend: Backend1Pass}))
+		got := cfg.ResolveBackend(env)
+		if got != Backend1Pass {
+			t.Errorf("ResolveBackend() = %q, want %q", got, Backend1Pass)
 		}
 	})
 }

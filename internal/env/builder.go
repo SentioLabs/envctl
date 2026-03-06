@@ -200,9 +200,12 @@ func (b *Builder) processPrimary(
 }
 
 // clientForInclude returns the appropriate secrets client for an include entry.
-// If the include has a backend qualifier (aws: or 1pass:), a new client is created
-// for that backend. Otherwise, the primary client is used.
+// If the include has a backend qualifier (aws:, 1pass:, or backend:), a new client
+// is created for that backend. Otherwise, the primary client is used.
 func (b *Builder) clientForInclude(ctx context.Context, inc config.IncludeEntry) (secrets.Client, error) {
+	// Promote backend field for non-first sources (first source is promoted at parse time)
+	config.PromoteBackend(&inc)
+
 	if inc.AWS == nil && inc.OnePass == nil {
 		return b.secrets, nil
 	}

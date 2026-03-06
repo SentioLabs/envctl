@@ -1,8 +1,7 @@
 version: 1
 aws:
   region: us-east-1
-1pass:
-  vault: my-vault
+default_backend: aws
 environments:
   dev:
-    secret: myapp/dev
+    - secret: myapp/dev

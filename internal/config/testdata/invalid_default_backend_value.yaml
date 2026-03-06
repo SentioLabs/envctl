@@ -1,0 +1,9 @@
+version: 1
+aws:
+  region: us-east-1
+1pass:
+  vault: Dev
+default_backend: invalid
+environments:
+  dev:
+    - secret: myapp/dev
