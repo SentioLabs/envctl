@@ -101,6 +101,11 @@ version: 1
 # Default environment when -e/--env not specified
 default_environment: dev
 
+# Optional: AWS settings (region/profile). Defaults to AWS SDK credential chain.
+# aws:
+#   region: us-east-1
+#   profile: my-profile
+
 # Environment definitions
 environments:
   dev:
@@ -110,12 +115,13 @@ environments:
   # prod:
   #   secret: %s-prod
 
-# Optional: Additional secrets to include
+# Optional: Additional secrets to include (must be environment-keyed)
 # include:
-#   - secret: shared/datadog
-#   - secret: shared/stripe
-#     key: test_key
-#     as: STRIPE_SECRET_KEY
+#   dev:
+#     - secret: shared/datadog
+#     - secret: shared/stripe
+#       key: test_key
+#       as: STRIPE_SECRET_KEY
 
 # Optional: Explicit env var mappings
 # mapping:
@@ -131,26 +137,34 @@ version: 1
 # Default environment when -e/--env not specified
 default_environment: dev
 
+# Optional: AWS settings (region/profile). Defaults to AWS SDK credential chain.
+# aws:
+#   region: us-east-1
+#   profile: my-profile
+
 # Environment definitions
 environments:
   dev:
     secret: your-app/dev  # Replace with your AWS secret name
-    # region: us-west-2   # Optional: override AWS region
-    # profile: my-profile # Optional: use specific AWS profile
+    # Per-environment AWS overrides go under an aws: block:
+    # aws:
+    #   region: us-west-2
+    #   profile: my-profile
   # staging:
   #   secret: your-app/staging
   # prod:
   #   secret: your-app/prod
 
-# Optional: Additional secrets to include
+# Optional: Additional secrets to include (must be environment-keyed)
 # include:
-#   # Pull all keys from a shared secret
-#   - secret: shared/datadog
+#   dev:
+#     # Pull all keys from a shared secret
+#     - secret: shared/datadog
 #
-#   # Pull specific key and rename it
-#   - secret: shared/stripe
-#     key: test_key
-#     as: STRIPE_SECRET_KEY
+#     # Pull specific key and rename it
+#     - secret: shared/stripe
+#       key: test_key
+#       as: STRIPE_SECRET_KEY
 
 # Optional: Explicit env var mappings using secret#key syntax
 # mapping:
@@ -166,13 +180,10 @@ func generateOnePasswordConfig() string {
 
 version: 1
 
-# Use 1Password as the secrets backend
-backend: 1password
-
-# 1Password settings
-onepassword:
+# 1Password settings (the '1pass' block selects the backend)
+1pass:
   vault: Development  # Default vault (change to your vault name)
-  # account: my-account # Optional: account shorthand for multi-account setups
+  # account: my-team    # Optional: short domain, full URL, or account ID
 
 # Default environment when -e/--env not specified
 default_environment: dev
@@ -187,12 +198,13 @@ environments:
   # prod:
   #   secret: %s Prod
 
-# Optional: Additional 1Password items to include
+# Optional: Additional 1Password items to include (must be environment-keyed)
 # include:
-#   - secret: Shared Secrets
-#   - secret: API Keys
-#     key: stripe_key
-#     as: STRIPE_SECRET_KEY
+#   dev:
+#     - secret: Shared Secrets
+#     - secret: API Keys
+#       key: stripe_key
+#       as: STRIPE_SECRET_KEY
 
 # Optional: Explicit env var mappings
 # mapping:
@@ -205,13 +217,10 @@ environments:
 
 version: 1
 
-# Use 1Password as the secrets backend
-backend: 1password
-
-# 1Password settings
-onepassword:
+# 1Password settings (the '1pass' block selects the backend)
+1pass:
   vault: Development  # Default vault (change to your vault name)
-  # account: my-account # Optional: account shorthand for multi-account setups
+  # account: my-team    # Optional: short domain, full URL, or account ID
 
 # Default environment when -e/--env not specified
 default_environment: dev
@@ -226,15 +235,16 @@ environments:
   # prod:
   #   secret: My App Prod
 
-# Optional: Additional 1Password items to include
+# Optional: Additional 1Password items to include (must be environment-keyed)
 # include:
-#   # Pull all fields from a shared item
-#   - secret: Shared Secrets
+#   dev:
+#     # Pull all fields from a shared item
+#     - secret: Shared Secrets
 #
-#   # Pull specific field and rename it
-#   - secret: API Keys
-#     key: stripe_key
-#     as: STRIPE_SECRET_KEY
+#     # Pull specific field and rename it
+#     - secret: API Keys
+#       key: stripe_key
+#       as: STRIPE_SECRET_KEY
 
 # Optional: Explicit env var mappings
 # mapping:

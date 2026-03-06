@@ -1,0 +1,16 @@
+version: 1
+aws:
+  region: us-east-1
+  profile: bactrack-dev
+1pass:
+  vault: Dev
+  account: my-account
+default_backend: 1pass
+environments:
+  dev:
+    - secret: My App Dev
+      backend: 1pass
+    - secret: dev/app/secrets
+      backend: aws
+      key: api_key
+      as: API_KEY

@@ -9,6 +9,7 @@ import (
 
 	"github.com/sentiolabs/envctl/internal/cache"
 	"github.com/sentiolabs/envctl/internal/config"
+	"github.com/sentiolabs/envctl/internal/env"
 	"github.com/sentiolabs/envctl/internal/secrets"
 	"github.com/spf13/cobra"
 )
@@ -73,7 +74,9 @@ func verboseLog(format string, args ...any) {
 }
 
 // createSecretsClient creates a secrets client based on the configured backend.
-func createSecretsClient(ctx context.Context, cfg *config.Config, envConfig *config.Environment) (secrets.Client, error) {
+func createSecretsClient(
+	ctx context.Context, cfg *config.Config, envConfig *config.Environment,
+) (secrets.Client, error) {
 	var cacheManager *cache.Manager
 
 	backend := cfg.ResolveBackend(envConfig)
@@ -229,4 +232,55 @@ func getIncludeAllOverride(cmd *cobra.Command) *bool {
 		return &includeAll
 	}
 	return nil
+}
+
+// loadAndBuild loads config, creates a secrets client, and builds environment entries.
+// This consolidates the common config→client→builder pattern used by env, run, export, and get commands.
+func loadAndBuild(
+	ctx context.Context,
+	cmd *cobra.Command,
+	overrides map[string]string,
+) ([]env.Entry, *config.Config, error) {
+	configPath := configFile
+	if configPath == "" {
+		var err error
+		configPath, err = config.FindConfig()
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	verboseLog("Using config: %s", configPath)
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	envConfig, _, err := resolveEnvironmentConfig(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	selectedEnv := envName
+	if selectedEnv == "" {
+		selectedEnv = cfg.DefaultEnvironment
+	}
+	verboseLog("Using environment: %s (secret: %s)", selectedEnv, envConfig.Secret())
+
+	client, err := createSecretsClient(ctx, cfg, envConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	builder := env.NewBuilder(client, cfg, appName, envName).
+		WithIncludeAll(getIncludeAllOverride(cmd)).
+		WithOptions(env.BuilderOptions{NoCache: noCache, Refresh: refresh})
+
+	entries, err := builder.Build(ctx, overrides)
+	if err != nil {
+		return nil, nil, err
+	}
+	verboseLog("Loaded %d environment variables", len(entries))
+
+	return entries, cfg, nil
 }

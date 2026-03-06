@@ -1,6 +1,4 @@
-package docs
-
-const K8s = `Converting Kubernetes Secrets to envctl
+Converting Kubernetes Secrets to envctl
 ========================================
 
 This guide helps you convert Kubernetes secret configurations to envctl
@@ -84,25 +82,25 @@ Given this Kubernetes values.yaml:
           name: redis-auth
           key: password
 
-Converts to .envctl.yaml:
+Converts to .envctl.yaml (AWS is the default backend when no 'aws'
+or '1pass' block is specified):
 
   version: 1
   default_environment: dev
 
   environments:
     dev:
-      secret: myapp-secrets     # Primary secret
+      - secret: myapp-secrets       # Primary source (uses AWS by default)
 
-  include:
-    # Shared Datadog secret
-    - secret: datadog-secrets
-      key: api_key
-      as: DD_API_KEY
+      # Shared Datadog secret
+      - secret: datadog-secrets
+        key: api_key
+        as: DD_API_KEY
 
-    # Plain text Redis password (use _value for non-JSON secrets)
-    - secret: redis-auth
-      key: _value
-      as: REDIS_PASSWORD
+      # Plain text Redis password (use _value for non-JSON secrets)
+      - secret: redis-auth
+        key: _value
+        as: REDIS_PASSWORD
 
 And run-local.sh for hardcoded values:
 
@@ -157,4 +155,3 @@ Convert each entry to a mapping:
   mapping:
     DATABASE_URL: myapp#db_url
     API_KEY: myapp#api_key
-`

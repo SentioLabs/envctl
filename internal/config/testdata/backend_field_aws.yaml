@@ -1,0 +1,13 @@
+version: 1
+aws:
+  region: us-east-1
+1pass:
+  vault: Dev
+default_backend: 1pass
+environments:
+  dev:
+    - secret: My App Dev
+    - secret: dev/app/secrets
+      backend: aws
+      key: api_key
+      as: API_KEY
