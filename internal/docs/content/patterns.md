@@ -192,8 +192,9 @@ Or use environment variables to switch credentials:
 Cross-Backend Sources
 ---------------------
 
-Mix 1Password and AWS Secrets Manager in the same environment
-using the source list format:
+Mix 1Password and AWS Secrets Manager in the same environment.
+When both backends are configured globally, set default_backend to
+declare which backend sources use by default:
 
   version: 1
   default_environment: dev
@@ -201,15 +202,17 @@ using the source list format:
   1pass:
     vault: Development
 
+  aws:
+    region: us-east-1
+
+  default_backend: 1pass            # Required when both backends configured
+
   environments:
     dev:
-      - secret: My App Secrets       # Primary from 1Password
-        1pass:
-          vault: Development
+      - secret: My App Secrets      # Uses 1pass (default_backend)
 
-      - secret: shared/aws-config    # Additional from AWS
-        aws:
-          region: us-east-1
+      - secret: shared/aws-config   # Routes to AWS
+        backend: aws
         keys:
           - key: database_host
             as: DATABASE_HOST
@@ -217,3 +220,7 @@ using the source list format:
             as: DATABASE_PASSWORD
 
 Later sources in the list override earlier ones when keys conflict.
+
+You can also use inline aws: or 1pass: blocks on source entries for
+per-source overrides (region, profile, vault) without needing the
+backend: routing hint.

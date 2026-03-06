@@ -154,15 +154,17 @@ from an AWS secret in the same environment:
   1pass:
     vault: Development
 
+  aws:
+    region: us-east-1
+
+  default_backend: 1pass              # Required when both backends configured
+
   environments:
     dev:
-      - secret: My App Dev Secrets
-        1pass:
-          vault: Development
+      - secret: My App Dev Secrets    # Uses 1pass (default_backend)
 
       - secret: dev/bacstack/core-api/app-secrets
-        aws:
-          region: us-east-1
+        backend: aws                  # Routes to AWS
         keys:
           - key: database_host
             as: DATABASE_HOST

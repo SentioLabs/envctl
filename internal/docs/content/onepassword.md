@@ -126,9 +126,10 @@ The '1pass' block can appear at three levels:
         1pass:
           vault: Dev Vault
 
-  Per-include entry (cross-backend access):
-    include:
+  Per-source entry (cross-backend access):
+    environments:
       dev:
+        - secret: myapp/dev               # Primary from AWS
         - secret: op://SharedVault/Shared Secrets
           key: api_key
           as: SHARED_API_KEY

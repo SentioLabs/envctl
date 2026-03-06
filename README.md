@@ -167,16 +167,16 @@ environments:
 
 ```yaml
 version: 1
-backend: 1password
 
-onepassword:
+1pass:
   vault: Development
+  account: my-team
 
 default_environment: dev
 
 environments:
   dev:
-    secret: My App Secrets
+    secret: My App Dev Secrets
 ```
 </details>
 
@@ -315,33 +315,29 @@ default_environment: dev
 
 environments:
   dev:
-    secret: myapp/dev
+    secret: myapp/dev       # Single-source shorthand
   staging:
-    secret: myapp/staging
+    - secret: myapp/staging # List format (for multiple sources)
   prod:
-    secret: myapp/prod
+    - secret: myapp/prod
 ```
 
 ### Advanced Configuration
+
+Environments are ordered lists of secret sources. The first source is the primary; additional sources provide supplementary keys.
 
 ```yaml
 version: 1
 default_environment: dev
 
+aws:
+  region: us-east-1
+  profile: mycompany-dev
+
 environments:
   dev:
-    secret: myapp/dev
-    region: us-west-2       # Override AWS region
-    profile: mycompany-dev  # Use specific AWS profile
-  staging:
-    secret: myapp/staging
-    profile: mycompany-staging
-  prod:
-    secret: myapp/prod
+    - secret: myapp/dev                 # Primary source
 
-# Include additional secrets (scoped per environment)
-include:
-  dev:
     # Pull specific key and rename it
     - secret: shared/stripe
       key: test_key
@@ -354,18 +350,17 @@ include:
     # Pull all keys from a shared secret (requires include_all: true)
     - secret: shared/datadog
 
-    # Cross-backend: pull from AWS while primary backend is 1Password
-    - secret: shared/datadog
-      key: api_key
-      as: DD_API_KEY
-      aws:
-        region: us-east-1
-
   staging:
+    - secret: myapp/staging
+      aws:
+        region: us-west-2               # Override region for this source
     - secret: shared/stripe
       key: live_key
       as: STRIPE_SECRET_KEY
     - secret: shared/datadog
+
+  prod:
+    - secret: myapp/prod
 
 # Explicit mappings (highest precedence)
 mapping:
@@ -378,51 +373,46 @@ mapping:
 
 ### Multi-Application Configuration
 
-For monorepos or projects with multiple applications, use the `applications` block:
+For monorepos or projects with multiple applications, use the `applications` block. Each application contains environments as ordered source lists:
 
 ```yaml
 version: 1
 default_application: core-api
 default_environment: dev
 
-# Application-centric hierarchy
+aws:
+  region: us-east-1
+
 applications:
   core-api:
     dev:
-      secret: dev/myorg/core-api/app-secrets
-      region: us-east-1
-      profile: mycompany-dev
+      - secret: dev/myorg/core-api/app-secrets
+        aws:
+          profile: mycompany-dev
+      - secret: shared/datadog
+        key: api_key
+        as: DD_API_KEY
     staging:
-      secret: staging/myorg/core-api/app-secrets
-      profile: mycompany-staging
-    prod:
-      secret: prod/myorg/core-api/app-secrets
-      region: us-west-2
+      - secret: staging/myorg/core-api/app-secrets
+        aws:
+          profile: mycompany-staging
+      - secret: shared/datadog
+        key: api_key
+        as: DD_API_KEY
 
   worker:
     dev:
-      secret: dev/myorg/worker/app-secrets
+      - secret: dev/myorg/worker/app-secrets
+      - secret: shared/worker-specific
     staging:
-      secret: staging/myorg/worker/app-secrets
-    # App-level includes (scoped per environment)
-    include:
-      dev:
-        - secret: shared/worker-specific
-      staging:
-        - secret: shared/worker-specific
+      - secret: staging/myorg/worker/app-secrets
+      - secret: shared/worker-specific
     mapping:
       WORKER_QUEUE: shared/queues#worker_url
 
-# Global includes (apply to all applications, scoped per environment)
-include:
-  dev:
-    - secret: shared/datadog
-  staging:
-    - secret: shared/datadog
-
 # Global mappings (apply to all applications)
 mapping:
-  DD_API_KEY: shared/datadog#api_key
+  LEGACY_KEY: legacy-system/creds#api_key
 ```
 
 Run with the `--app` flag:
@@ -440,9 +430,9 @@ envctl validate -a core-api
 ```
 
 When using applications:
-- Global `include` entries for the active environment apply to all applications
-- App-level `include` entries for the active environment override globals
-- `mapping` entries apply to all environments
+- Each environment is a source list (same format as legacy mode)
+- App-level `mapping` entries apply to all environments for that app
+- Global `mapping` entries apply to all applications
 - Both `--app/-a` and `--env/-e` flags support shell completion
 
 ### Mappings-Only Mode (Default)
@@ -454,12 +444,20 @@ To include all keys from the primary secret, set `include_all: true`:
 ```yaml
 version: 1
 default_environment: dev
-include_all: true  # Global setting
+include_all: true       # Global setting
 
 environments:
   dev:
+    secret: myapp/dev   # Single-source shorthand (mapping format)
+```
+
+Or set per-environment in the mapping format:
+
+```yaml
+environments:
+  dev:
     secret: myapp/dev
-    include_all: true  # Or per-environment
+    include_all: true   # Per-environment override
 ```
 
 You can also use the `--include-all` CLI flag to override at runtime:
@@ -472,20 +470,20 @@ envctl run --include-all -- make dev
 
 When resolving environment variables, sources are applied in this order (later wins):
 
-**Default (mappings-only mode):**
-1. Global `include` entries for the active environment (with specific keys)
-2. App-level `include` entries for the active environment (with specific keys)
+**With `include_all: true` (all keys mode):**
+1. Primary source (first entry in source list) — lowest priority
+2. Additional source entries (in order; later overrides earlier)
 3. Global `mapping` entries
-4. App-level `mapping` entries
-5. Command-line overrides (`--set KEY=VALUE`)
+4. App-level `mapping` entries (if using applications)
+5. Command-line `--set` overrides — highest priority
 
-**With `include_all: true`:**
-1. Primary `secret` for the environment (all keys)
-2. Global `include` entries for the active environment (in order specified)
-3. App-level `include` entries for the active environment (in order specified)
-4. Global `mapping` entries
-5. App-level `mapping` entries
-6. Command-line overrides (`--set KEY=VALUE`)
+**Default (mappings-only mode):**
+1. Source entries with explicit `key`/`keys` (in order)
+2. Global `mapping` entries
+3. App-level `mapping` entries
+4. Command-line `--set` overrides — highest priority
+
+In mappings-only mode, source entries without a `key` or `keys` field (other than the primary) will error. The primary source is silently skipped when it has no explicit keys.
 
 ### AWS Secret Format
 
@@ -505,11 +503,12 @@ Secrets in AWS Secrets Manager can be JSON objects or plain text:
 my-redis-password
 ```
 
-Plain text secrets are exposed as a single key named `_value`. Use the `as` field to rename it:
+Plain text secrets are exposed as a single key named `_value`. Use the `key` and `as` fields to rename it:
 
 ```yaml
-include:
+environments:
   dev:
+    - secret: myapp/dev
     - secret: myapp/redis-password
       key: _value
       as: REDIS_PASSWORD
@@ -617,10 +616,11 @@ envctl run -- make dev
 
 # Using named profile (via config - preferred)
 # In .envctl.yaml:
+#   aws:
+#     profile: my-profile
 #   environments:
 #     dev:
 #       secret: myapp/dev
-#       profile: my-profile
 envctl run -- make dev
 ```
 
@@ -684,21 +684,76 @@ aws secretsmanager put-secret-value \
 
 ### Configuration
 
+The backend is determined by the presence of a `1pass:` block (there is no `backend` field at the root level):
+
 ```yaml
 version: 1
-backend: 1password
 
-onepassword:
-  vault: Development  # Default vault name
-  # account: my-account  # Optional: for multi-account setups
+1pass:
+  vault: Development        # Default vault name
+  account: my-team          # Optional: for multi-account setups
 
 default_environment: dev
 
 environments:
   dev:
-    secret: My App Dev Secrets  # 1Password item name
+    secret: My App Dev Secrets      # 1Password item name
   staging:
     secret: My App Staging Secrets
+```
+
+#### Using Both Backends
+
+When both `aws:` and `1pass:` are configured globally, you must set `default_backend` to declare which backend sources use by default. Use the `backend:` field on individual source entries to route to the other backend:
+
+```yaml
+version: 1
+
+aws:
+  region: us-east-1
+
+1pass:
+  vault: Development
+  account: my-team
+
+default_backend: 1pass              # Required when both backends configured
+
+environments:
+  dev:
+    - secret: My App Dev            # Uses 1pass (default_backend)
+    - secret: dev/app/db-creds      # Routes to AWS
+      backend: aws
+      keys:
+        - key: db_host
+          as: DATABASE_HOST
+        - key: db_pass
+          as: DATABASE_PASSWORD
+```
+
+#### Source Entry Options
+
+Each source in the environment list supports:
+
+| Field | Description |
+|-------|-------------|
+| `secret` | Required. Secret reference (name, path, or `op://` URI) |
+| `key` | Extract a single key from the secret |
+| `as` | Rename the extracted key |
+| `keys` | Extract multiple keys (mutually exclusive with `key`) |
+| `backend` | Routing hint: `aws` or `1pass` (when `default_backend` is set) |
+| `aws` | Inline AWS config override (`region`, `profile`) |
+| `1pass` | Inline 1Password config override (`vault`, `account`) |
+
+The `keys` field is an array of `{key, as}` pairs for extracting multiple keys from a single secret:
+
+```yaml
+- secret: shared/database
+  keys:
+    - key: db_host
+      as: DATABASE_HOST
+    - key: db_user
+      as: DATABASE_USER
+    - key: db_pass          # 'as' is optional; defaults to key name
 ```
 
 ### How 1Password Items Map to Environment Variables
@@ -881,9 +936,7 @@ version: 1
 default_environment: dev
 environments:
   dev:
-    secret: monorepo/api/dev
-include:
-  dev:
+    - secret: monorepo/api/dev
     - secret: monorepo/shared/dev
 ```
 
@@ -893,9 +946,7 @@ version: 1
 default_environment: dev
 environments:
   dev:
-    secret: monorepo/worker/dev
-include:
-  dev:
+    - secret: monorepo/worker/dev
     - secret: monorepo/shared/dev
 ```
 

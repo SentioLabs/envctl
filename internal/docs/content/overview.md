@@ -3,7 +3,8 @@ envctl Documentation
 
 envctl enables developers to use a secrets manager (AWS Secrets Manager or
 1Password) as the single source of truth for application secrets during
-local development.
+local development. Both backends can be configured simultaneously using
+the 'default_backend' field to declare which one sources use by default.
 
 Available Topics
 ----------------

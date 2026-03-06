@@ -13,29 +13,42 @@ version: 1                    # Config version (always 1)
 Backend Selection
 -----------------
 
-The backend is determined by the presence of an 'aws' or '1pass' block —
-there is no 'backend' field. When neither block is present, envctl defaults
-to AWS Secrets Manager using the standard AWS SDK credential chain.
+The backend is determined by the presence of an 'aws' or '1pass' block.
+Both can be configured at the global level to provide defaults for each
+backend. When both are configured, a 'default_backend' field is required
+to declare which backend sources use by default. Source entries can
+override this with 'backend: aws' or 'backend: 1pass'.
 
-  # Global AWS config (applies to all environments)
+When only one backend is configured globally, it is used by default.
+When neither block is present, envctl defaults to AWS Secrets Manager
+using the standard AWS SDK credential chain.
+
+  # Both backends configured globally
   aws:
     region: us-east-1
     profile: mycompany-dev
 
-  # Or per-environment override (inside source entries)
-  environments:
-    dev:
-      - secret: myapp/dev
-        aws:
-          region: us-west-2       # Override region for this source
-
-  # 1Password backend (use '1pass', NOT 'onepassword' or 'backend')
   1pass:
     vault: Development
-    account: my-team            # Optional: for multi-account setups
+    account: my-team
+
+  default_backend: 1pass             # Required when both backends configured
+
+  environments:
+    dev:
+      - secret: My App Dev          # Uses 1pass (from default_backend)
+      - secret: dev/app/secrets      # Routes to AWS
+        backend: aws
+
+  # Per-environment override (inside source entries)
+  environments:
+    staging:
+      - secret: myapp/staging
+        aws:
+          region: us-west-2          # Override region for this source
 
 COMMON MISTAKES (these cause parse errors):
-  - backend: 1password     # NOT a valid field
+  - backend: 1password     # NOT a valid field value; use "1pass"
   - onepassword:           # Wrong key, correct key is '1pass'
   - region: us-east-1      # On environment level — must be under aws:
   - profile: mycompany     # On environment level — must be under aws:
@@ -156,6 +169,10 @@ Each source entry supports these fields:
     aws:                        # Override backend for this source
       region: us-east-1
 
+  - secret: dev/app/secrets     # Route to specific backend
+    backend: aws                # Use when global config has both aws: and 1pass:
+                                # Not needed if aws: or 1pass: block is present
+
 NOTE: 'key' and 'keys' are mutually exclusive on the same source entry.
 Use 'key' for a single key, 'keys' for multiple keys from the same secret.
 
@@ -208,6 +225,7 @@ Config (root level):
   version: int                         # Required, must be 1
   default_application: string          # Optional
   default_environment: string          # Optional
+  default_backend: string              # Required when both aws: and 1pass: configured
   include_all: bool                    # Optional
   aws: AWSConfig                       # Optional (see below)
   1pass: OnePassConfig                 # Optional (see below)
@@ -223,6 +241,7 @@ Application:
 
 Environment (mapping format — single source):
   secret: string                       # Required
+  backend: string                      # Optional: "aws" or "1pass" routing hint
   include_all: bool                    # Optional
   aws: AWSConfig                       # Optional
   1pass: OnePassConfig                 # Optional
@@ -235,6 +254,7 @@ IncludeEntry (source entry):
   key: string                          # Optional: specific key from secret
   as: string                           # Optional: rename the key
   keys: []KeyMapping                   # Optional: multiple keys (mutually exclusive with key)
+  backend: string                      # Optional: "aws" or "1pass" routing hint
   aws: AWSConfig                       # Optional: cross-backend override
   1pass: OnePassConfig                 # Optional: cross-backend override
 

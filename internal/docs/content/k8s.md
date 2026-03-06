@@ -90,11 +90,8 @@ or '1pass' block is specified):
 
   environments:
     dev:
-      secret: myapp-secrets     # Primary secret (uses AWS by default)
+      - secret: myapp-secrets       # Primary source (uses AWS by default)
 
-  # Include must be environment-keyed (not a flat list)
-  include:
-    dev:
       # Shared Datadog secret
       - secret: datadog-secrets
         key: api_key
