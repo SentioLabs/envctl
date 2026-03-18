@@ -25,23 +25,52 @@ Support dev, staging, and production:
   version: 1
   default_environment: dev
 
+  aws:
+    region: us-east-1
+
   environments:
     dev:
       secret: myapp/dev
-      region: us-east-1
     staging:
       secret: myapp/staging
-      region: us-east-1
     prod:
       secret: myapp/prod
-      region: us-west-2
+      aws:
+        region: us-west-2     # Override region for prod
 
 Usage:
   envctl run -- npm start              # uses dev (default)
   envctl -e staging run -- npm start   # uses staging
   envctl -e prod run -- npm start      # uses prod
 
-3. With Shared Secrets
+3. Mixed Backends (Per-Environment)
+------------------------------------
+
+Use 1Password for local development and AWS for deployed environments:
+
+  version: 1
+  default_environment: local
+
+  environments:
+    local:
+      secret: My App Local Secrets
+      1pass:
+        vault: Development
+    staging:
+      secret: myapp/staging
+      aws:
+        region: us-east-1
+        profile: mycompany-staging
+    prod:
+      secret: myapp/prod
+      aws:
+        region: us-west-2
+
+Usage:
+  envctl run -- npm start              # uses local with 1Password
+  envctl -e staging run -- npm start   # uses staging with AWS
+
+5. With Shared Secrets
 ----------------------
 
 Include secrets shared across applications:
@@ -67,7 +96,7 @@ Include secrets shared across applications:
       key: _value
       as: REDIS_PASSWORD
 
-4. Multi-Application Setup
+6. Multi-Application Setup
 --------------------------
 
 Multiple apps in a monorepo or shared config:
@@ -100,7 +129,7 @@ Usage:
   envctl -a api run -- go run ./cmd/api
   envctl -a worker run -- python worker.py
 
-5. With Explicit Mappings
+7. With Explicit Mappings
 -------------------------
 
 Override or rename keys from the primary secret:
@@ -119,7 +148,7 @@ Override or rename keys from the primary secret:
     # Pull from a completely different secret
     LEGACY_API_KEY: legacy-system/creds#api_key
 
-6. With Caching Configured
+8. With Caching Configured
 --------------------------
 
 Customize cache behavior:
@@ -136,7 +165,7 @@ Customize cache behavior:
     ttl: "30m"          # Cache for 30 minutes
     backend: "keyring"  # Use OS keyring
 
-7. Docker Compose Integration
+9. Docker Compose Integration
 -----------------------------
 
 For use with Docker Compose, define env vars without values:

@@ -24,7 +24,7 @@ Quick Start
   # Create a starter configuration
   envctl init --secret myapp/dev
 
-  # Validate AWS connectivity
+  # Validate configuration and connectivity
   envctl validate
 
   # Run a command with secrets injected

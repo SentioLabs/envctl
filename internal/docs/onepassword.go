@@ -27,17 +27,33 @@ Prerequisites
 Configuration
 -------------
 
-To use 1Password, set 'backend: 1password' in your config:
+To use 1Password, add a '1pass' block at the global or environment level:
 
   version: 1
-  backend: 1password
+  default_environment: dev
 
-  onepassword:
+  1pass:
     vault: Development    # Default vault name
 
   environments:
     dev:
       secret: My App Dev  # 1Password item name
+
+You can also mix backends per environment. For example, use 1Password for
+local development and AWS for staging:
+
+  version: 1
+  default_environment: local
+
+  environments:
+    local:
+      secret: My App Local
+      1pass:
+        vault: Development
+    staging:
+      secret: myapp/staging
+      aws:
+        region: us-east-1
 
 Quick Start
 -----------

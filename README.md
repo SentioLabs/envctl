@@ -167,12 +167,10 @@ environments:
 
 ```yaml
 version: 1
-backend: 1password
-
-onepassword:
-  vault: Development
-
 default_environment: dev
+
+1pass:
+  vault: Development
 
 environments:
   dev:
@@ -328,14 +326,19 @@ environments:
 version: 1
 default_environment: dev
 
+aws:
+  region: us-east-1           # Global AWS defaults
+
 environments:
   dev:
     secret: myapp/dev
-    region: us-west-2       # Override AWS region
-    profile: mycompany-dev  # Use specific AWS profile
+    aws:
+      region: us-west-2       # Override AWS region
+      profile: mycompany-dev  # Use specific AWS profile
   staging:
     secret: myapp/staging
-    profile: mycompany-staging
+    aws:
+      profile: mycompany-staging
   prod:
     secret: myapp/prod
 
@@ -376,14 +379,17 @@ applications:
   core-api:
     dev:
       secret: dev/myorg/core-api/app-secrets
-      region: us-east-1
-      profile: mycompany-dev
+      aws:
+        region: us-east-1
+        profile: mycompany-dev
     staging:
       secret: staging/myorg/core-api/app-secrets
-      profile: mycompany-staging
+      aws:
+        profile: mycompany-staging
     prod:
       secret: prod/myorg/core-api/app-secrets
-      region: us-west-2
+      aws:
+        region: us-west-2
 
   worker:
     dev:
@@ -598,7 +604,8 @@ envctl run -- make dev
 #   environments:
 #     dev:
 #       secret: myapp/dev
-#       profile: my-profile
+#       aws:
+#         profile: my-profile
 envctl run -- make dev
 ```
 
@@ -664,19 +671,35 @@ aws secretsmanager put-secret-value \
 
 ```yaml
 version: 1
-backend: 1password
-
-onepassword:
-  vault: Development  # Default vault name
-  # account: my-account  # Optional: for multi-account setups
-
 default_environment: dev
+
+1pass:
+  vault: Development        # Default vault name
+  # account: my-account    # Optional: for multi-account setups
 
 environments:
   dev:
     secret: My App Dev Secrets  # 1Password item name
   staging:
     secret: My App Staging Secrets
+```
+
+You can also mix backends per environment (e.g., 1Password for local dev, AWS for staging):
+
+```yaml
+version: 1
+default_environment: local
+
+environments:
+  local:
+    secret: My App Local Secrets
+    1pass:
+      vault: Development
+  staging:
+    secret: myapp/staging
+    aws:
+      region: us-east-1
+      profile: mycompany-staging
 ```
 
 ### How 1Password Items Map to Environment Variables
@@ -789,7 +812,7 @@ Flags:
 
 #### `envctl validate`
 
-Validate configuration and AWS connectivity.
+Validate configuration and backend connectivity.
 
 ```bash
 envctl validate

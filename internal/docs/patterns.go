@@ -173,16 +173,22 @@ If dev/staging/prod are in different AWS accounts:
   environments:
     dev:
       secret: myapp/dev
-      region: us-east-1       # Dev account
+      aws:
+        region: us-east-1       # Dev account
+        profile: dev
     staging:
       secret: myapp/staging
-      region: us-east-1       # Staging account
+      aws:
+        region: us-east-1       # Staging account
+        profile: staging
     prod:
       secret: myapp/prod
-      region: us-west-2       # Prod account
+      aws:
+        region: us-west-2       # Prod account
+        profile: prod
 
-Switch AWS credentials per environment:
+Each environment's aws.profile is used automatically:
 
-  AWS_PROFILE=dev envctl -e dev run -- make dev
-  AWS_PROFILE=staging envctl -e staging run -- make dev
+  envctl -e dev run -- make dev         # uses 'dev' profile
+  envctl -e staging run -- make dev     # uses 'staging' profile
 `

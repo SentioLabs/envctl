@@ -4,7 +4,7 @@ const Config = `Configuration File Format (.envctl.yaml)
 =========================================
 
 envctl uses a YAML configuration file to define how secrets are loaded
-from AWS Secrets Manager.
+from your secrets backend (AWS Secrets Manager or 1Password).
 
 Required Fields
 ---------------
@@ -22,16 +22,21 @@ Use when you have one application or want a flat structure.
   version: 1
   default_environment: dev
 
+  aws:                              # Global backend defaults
+    region: us-east-1
+
   environments:
     dev:
-      secret: myapp/dev           # AWS secret name (required)
-      region: us-east-1           # Optional, defaults to AWS_REGION
-      profile: mycompany-dev      # Optional, defaults to AWS_PROFILE
-      include_all: true           # Optional, include all keys from primary secret
+      secret: myapp/dev             # Secret name (required)
+      aws:                          # Per-environment backend override
+        profile: mycompany-dev
+      include_all: true             # Optional, include all keys from primary secret
     staging:
       secret: myapp/staging
-    prod:
-      secret: myapp/prod
+    local:
+      secret: My App Local          # 1Password item name
+      1pass:                        # Use 1Password for this environment
+        vault: Development
 
 APPLICATION MODE (multiple applications)
 Use when you have multiple apps sharing a config or want app-level isolation.
@@ -40,12 +45,15 @@ Use when you have multiple apps sharing a config or want app-level isolation.
   default_application: api
   default_environment: dev
 
+  aws:
+    region: us-east-1
+
   applications:
     api:
       dev:
         secret: myorg/api/dev
-        region: us-east-1
-        profile: mycompany-dev
+        aws:
+          profile: mycompany-dev
       staging:
         secret: myorg/api/staging
       # App-level includes (only for this app)
@@ -89,7 +97,7 @@ You can also use the --include-all CLI flag to override at runtime.
 Including Additional Secrets
 ----------------------------
 
-The 'include' block pulls in keys from other AWS secrets:
+The 'include' block pulls in keys from other secrets:
 
 include:
   # Include a SPECIFIC key (keeps original name) - always works
@@ -149,20 +157,23 @@ Default (mappings-only mode):
 
 Note: In mappings-only mode, include entries without a 'key' field will error.
 
-AWS Secret Format
------------------
+Secret Formats
+--------------
 
-Secrets in AWS Secrets Manager can be:
+AWS Secrets Manager secrets can be JSON objects or plain text:
 
-JSON (multiple key-value pairs):
-  {"DATABASE_URL": "postgres://...", "API_KEY": "sk-..."}
+  JSON (multiple key-value pairs):
+    {"DATABASE_URL": "postgres://...", "API_KEY": "sk-..."}
 
-Plain text (single value):
-  my-secret-password
+  Plain text (single value):
+    my-secret-password
 
-Plain text secrets are exposed with the key "_value". Use 'as' to rename:
-  include:
-    - secret: myapp/password
-      key: _value
-      as: MY_PASSWORD
+  Plain text secrets are exposed with the key "_value". Use 'as' to rename:
+    include:
+      - secret: myapp/password
+        key: _value
+        as: MY_PASSWORD
+
+1Password items map field labels to environment variable names.
+See 'envctl docs 1password' for details on 1Password item structure.
 `
