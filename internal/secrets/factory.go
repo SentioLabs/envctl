@@ -2,7 +2,6 @@ package secrets
 
 import (
 	"context"
-	"errors"
 
 	"github.com/sentiolabs/envctl/internal/aws"
 	"github.com/sentiolabs/envctl/internal/cache"
@@ -10,10 +9,11 @@ import (
 	"github.com/sentiolabs/envctl/internal/onepassword"
 )
 
-// Compile-time interface checks for the adapter.
+// Compile-time interface checks for the adapters.
 var (
 	_ Editor          = (*opEditorAdapter)(nil)
 	_ FieldTypeEditor = (*opEditorAdapter)(nil)
+	_ Editor          = (*awsEditorAdapter)(nil)
 )
 
 // Options configures the secrets client factory.
@@ -98,9 +98,107 @@ func NewEditor(ctx context.Context, opts EditorOptions) (Editor, error) {
 	}
 }
 
-// newAWSEditor creates an AWS editor. Placeholder until the AWS editor backend is implemented.
-func newAWSEditor(_ context.Context, _ config.AWSConfig) (Editor, error) {
-	return nil, errors.New("aws editor: not implemented")
+// newAWSEditor creates an AWS editor that adapts the aws.AWSEditor
+// to the secrets.Editor interface.
+func newAWSEditor(ctx context.Context, awsCfg config.AWSConfig) (Editor, error) {
+	awsEditor, err := aws.NewEditor(ctx, aws.EditorOptions{
+		Region:  awsCfg.Region,
+		Profile: awsCfg.Profile,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &awsEditorAdapter{awsEditor: awsEditor}, nil
+}
+
+// awsEditorAdapter wraps aws.AWSEditor to satisfy secrets.Editor.
+// This adapter is necessary to avoid an import cycle between the secrets and aws packages.
+type awsEditorAdapter struct {
+	awsEditor *aws.AWSEditor
+}
+
+// GetSecret delegates to the underlying AWS editor.
+func (a *awsEditorAdapter) GetSecret(ctx context.Context, secretRef string) (map[string]string, error) {
+	return a.awsEditor.GetSecret(ctx, secretRef)
+}
+
+// GetSecretKey delegates to the underlying AWS editor.
+func (a *awsEditorAdapter) GetSecretKey(ctx context.Context, secretRef, key string) (string, error) {
+	return a.awsEditor.GetSecretKey(ctx, secretRef, key)
+}
+
+// Name returns the backend name from the underlying AWS editor.
+func (a *awsEditorAdapter) Name() string {
+	return a.awsEditor.Name()
+}
+
+// ListVaults converts aws.EditorVault to secrets.Vault.
+func (a *awsEditorAdapter) ListVaults(ctx context.Context) ([]Vault, error) {
+	vaults, err := a.awsEditor.ListEditorVaults(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Vault, len(vaults))
+	for i, v := range vaults {
+		result[i] = Vault{ID: v.ID, Name: v.Name}
+	}
+	return result, nil
+}
+
+// ListItems converts aws.EditorItem to secrets.Item.
+func (a *awsEditorAdapter) ListItems(ctx context.Context, vault string) ([]Item, error) {
+	items, err := a.awsEditor.ListEditorItems(ctx, vault)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Item, len(items))
+	for i, item := range items {
+		result[i] = Item{ID: item.ID, Name: item.Name, Vault: item.Vault}
+	}
+	return result, nil
+}
+
+// GetFields converts aws.EditorField to secrets.Field.
+func (a *awsEditorAdapter) GetFields(ctx context.Context, ref string) ([]Field, error) {
+	fields, err := a.awsEditor.GetEditorFields(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Field, len(fields))
+	for i, f := range fields {
+		result[i] = Field{
+			ID:      f.ID,
+			Key:     f.Key,
+			Value:   f.Value,
+			Type:    FieldType(f.Type),
+			Section: f.Section,
+		}
+	}
+	return result, nil
+}
+
+// UpdateField delegates field update to the AWS editor.
+func (a *awsEditorAdapter) UpdateField(ctx context.Context, ref string, field Field) error {
+	return a.awsEditor.UpdateEditorField(ctx, ref, field.Key, field.Value)
+}
+
+// DeleteField delegates field deletion to the AWS editor.
+func (a *awsEditorAdapter) DeleteField(ctx context.Context, ref, key string) error {
+	return a.awsEditor.DeleteEditorField(ctx, ref, key)
+}
+
+// RenameField delegates field rename to the AWS editor.
+func (a *awsEditorAdapter) RenameField(ctx context.Context, ref, oldKey, newKey string) error {
+	return a.awsEditor.RenameEditorField(ctx, ref, oldKey, newKey)
+}
+
+// CreateItem converts secrets.Field to aws.EditorFieldPair and delegates item creation.
+func (a *awsEditorAdapter) CreateItem(ctx context.Context, vault, name string, fields []Field) error {
+	awsFields := make([]aws.EditorFieldPair, len(fields))
+	for i, f := range fields {
+		awsFields[i] = aws.EditorFieldPair{Key: f.Key, Value: f.Value}
+	}
+	return a.awsEditor.CreateEditorItem(ctx, vault, name, awsFields)
 }
 
 // newOnePasswordEditor creates a 1Password editor that adapts the onepassword.OPEditor

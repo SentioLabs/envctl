@@ -68,15 +68,23 @@ func TestFieldTypeConstants(t *testing.T) {
 	}
 }
 
-func TestNewEditorReturnsNotImplemented(t *testing.T) {
-	t.Run("default backend returns not implemented", func(t *testing.T) {
+func TestNewEditorCreatesBackends(t *testing.T) {
+	t.Run("default backend creates AWS editor", func(t *testing.T) {
 		opts := secrets.EditorOptions{
 			Config: nil,
 			Env:    nil,
 		}
-		_, err := secrets.NewEditor(t.Context(), opts)
-		if err == nil {
-			t.Fatal("expected error for unimplemented AWS editor")
+		editor, err := secrets.NewEditor(t.Context(), opts)
+		if err != nil {
+			t.Skipf("skipping: AWS config not available: %v", err)
+		}
+		if editor == nil {
+			t.Fatal("expected non-nil editor for AWS backend")
+		}
+
+		// Verify the AWS editor does NOT satisfy FieldTypeEditor.
+		if _, ok := editor.(secrets.FieldTypeEditor); ok {
+			t.Fatal("expected AWS editor to NOT satisfy FieldTypeEditor")
 		}
 	})
 
