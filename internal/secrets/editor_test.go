@@ -12,7 +12,7 @@ import (
 type mockEditor struct{}
 
 func (m *mockEditor) GetSecret(_ context.Context, _ string) (map[string]string, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil // test mock
 }
 func (m *mockEditor) GetSecretKey(_ context.Context, _, _ string) (string, error) { return "", nil }
 func (m *mockEditor) Name() string                                                { return "mock" }
