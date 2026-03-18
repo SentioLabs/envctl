@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"errors"
 
 	"github.com/sentiolabs/envctl/internal/aws"
 	"github.com/sentiolabs/envctl/internal/cache"
@@ -60,4 +61,43 @@ func newOnePasswordClient(opCfg config.OnePassConfig, opts Options) (Client, err
 		DefaultVault: opCfg.Vault,
 		Account:      opCfg.Account,
 	})
+}
+
+// EditorOptions configures the editor factory.
+type EditorOptions struct {
+	Config *config.Config
+	Env    *config.Environment
+}
+
+// NewEditor creates a secrets editor based on the resolved environment's backend.
+func NewEditor(ctx context.Context, opts EditorOptions) (Editor, error) {
+	backend := config.BackendAWS
+	if opts.Config != nil {
+		backend = opts.Config.ResolveBackend(opts.Env)
+	}
+
+	switch backend {
+	case config.Backend1Pass:
+		opCfg := config.OnePassConfig{}
+		if opts.Config != nil {
+			opCfg = opts.Config.ResolveOnePassConfig(opts.Env)
+		}
+		return newOnePasswordEditor(opCfg)
+	default:
+		awsCfg := config.AWSConfig{}
+		if opts.Config != nil {
+			awsCfg = opts.Config.ResolveAWSConfig(opts.Env)
+		}
+		return newAWSEditor(ctx, awsCfg)
+	}
+}
+
+// newAWSEditor creates an AWS editor. Placeholder until the AWS editor backend is implemented.
+func newAWSEditor(_ context.Context, _ config.AWSConfig) (Editor, error) {
+	return nil, errors.New("aws editor: not implemented")
+}
+
+// newOnePasswordEditor creates a 1Password editor. Placeholder until the 1Password editor backend is implemented.
+func newOnePasswordEditor(_ config.OnePassConfig) (Editor, error) {
+	return nil, errors.New("1password editor: not implemented")
 }
