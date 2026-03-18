@@ -15,11 +15,12 @@ func (m *mockEditor) GetSecret(_ context.Context, _ string) (map[string]string, 
 	return nil, nil
 }
 func (m *mockEditor) GetSecretKey(_ context.Context, _, _ string) (string, error) { return "", nil }
-func (m *mockEditor) Name() string                                                 { return "mock" }
-func (m *mockEditor) ListVaults(_ context.Context) ([]secrets.Vault, error)        { return nil, nil }
+func (m *mockEditor) Name() string                                                { return "mock" }
+func (m *mockEditor) ListVaults(_ context.Context) ([]secrets.Vault, error)       { return nil, nil }
 func (m *mockEditor) ListItems(_ context.Context, _ string) ([]secrets.Item, error) {
 	return nil, nil
 }
+
 func (m *mockEditor) GetFields(_ context.Context, _ string) ([]secrets.Field, error) {
 	return nil, nil
 }
@@ -79,7 +80,7 @@ func TestNewEditorReturnsNotImplemented(t *testing.T) {
 		}
 	})
 
-	t.Run("1password backend returns not implemented", func(t *testing.T) {
+	t.Run("1password backend creates editor", func(t *testing.T) {
 		cfg := &config.Config{
 			Version: 1,
 			OnePass: &config.OnePassConfig{Vault: "TestVault"},
@@ -88,9 +89,17 @@ func TestNewEditorReturnsNotImplemented(t *testing.T) {
 			Config: cfg,
 			Env:    nil,
 		}
-		_, err := secrets.NewEditor(t.Context(), opts)
-		if err == nil {
-			t.Fatal("expected error for unimplemented 1password editor")
+		editor, err := secrets.NewEditor(t.Context(), opts)
+		if err != nil {
+			t.Skipf("skipping: op CLI not available: %v", err)
+		}
+		if editor == nil {
+			t.Fatal("expected non-nil editor for 1password backend")
+		}
+
+		// Verify the editor also satisfies FieldTypeEditor.
+		if _, ok := editor.(secrets.FieldTypeEditor); !ok {
+			t.Fatal("expected 1password editor to satisfy FieldTypeEditor")
 		}
 	})
 }
