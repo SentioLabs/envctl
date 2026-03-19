@@ -1,0 +1,8 @@
+version: 1
+environments:
+  dev:
+    secret: myapp/dev
+    aws:
+      region: us-west-2
+    1pass:
+      vault: my-vault

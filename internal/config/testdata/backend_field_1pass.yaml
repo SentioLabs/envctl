@@ -1,0 +1,13 @@
+version: 1
+aws:
+  region: us-east-1
+1pass:
+  vault: Dev
+default_backend: 1pass
+environments:
+  dev:
+    - secret: myapp/dev
+    - secret: My Shared Secret
+      backend: 1pass
+      key: api_key
+      as: SHARED_KEY

@@ -1,0 +1,19 @@
+version: 1
+default_environment: dev
+
+1pass:
+  vault: Development
+
+environments:
+  dev:
+    - secret: Dev Secrets
+      1pass:
+        vault: Development
+    - secret: dev/app/secrets
+      aws:
+        region: us-east-1
+      keys:
+        - key: database_host
+          as: DATABASE_HOST
+        - key: database_password
+          as: DATABASE_PASSWORD

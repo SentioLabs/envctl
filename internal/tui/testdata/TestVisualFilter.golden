@@ -1,0 +1,9 @@
+Fields: Test Item
+op://BACstack/Test Item
+  filter: app
+
+> APP_SERVER_PORT       8080                            text
+  APP_ENV               local                           text
+
+
+enter/e:edit  d:delete  r:rename  t:toggle  n:new  /:filter  s:save  esc:back  q:quit

@@ -1,0 +1,7 @@
+version: 1
+aws:
+  region: us-east-1
+environments:
+  dev:
+    secret: dev/bacstack/core-api/app-secrets
+    backend: aws

@@ -10,7 +10,6 @@ import (
 	"github.com/sentiolabs/envctl/internal/aws"
 	"github.com/sentiolabs/envctl/internal/cache"
 	"github.com/sentiolabs/envctl/internal/config"
-	"github.com/sentiolabs/envctl/internal/env"
 	"github.com/spf13/cobra"
 )
 
@@ -56,37 +55,7 @@ func runGet(cmd *cobra.Command, args []string) error {
 		return getFromSecret(ctx, getSecret)
 	}
 
-	// Load config
-	configPath := configFile
-	if configPath == "" {
-		var err error
-		configPath, err = config.FindConfig()
-		if err != nil {
-			return err
-		}
-	}
-
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return err
-	}
-
-	// Resolve environment config
-	envConfig, _, err := resolveEnvironmentConfig(cfg)
-	if err != nil {
-		return err
-	}
-
-	// Create secrets client with caching
-	client, err := createSecretsClient(ctx, cfg, envConfig)
-	if err != nil {
-		return err
-	}
-
-	// Build environment
-	builder := env.NewBuilder(client, cfg, appName, envName).
-		WithIncludeAll(getIncludeAllOverride(cmd))
-	entries, err := builder.Build(ctx, nil)
+	entries, _, err := loadAndBuild(ctx, cmd, nil)
 	if err != nil {
 		return err
 	}

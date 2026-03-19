@@ -1,0 +1,10 @@
+version: 1
+aws:
+  region: us-east-1
+environments:
+  dev:
+    - secret: myapp/dev
+    - secret: shared/secrets
+      backend: aws
+      1pass:
+        vault: Dev

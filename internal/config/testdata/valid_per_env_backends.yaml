@@ -1,0 +1,10 @@
+version: 1
+environments:
+  dev:
+    secret: myapp/dev
+    aws:
+      region: us-west-2
+  staging:
+    secret: myapp/staging
+    1pass:
+      vault: staging-vault

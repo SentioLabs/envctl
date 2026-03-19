@@ -1,0 +1,9 @@
+version: 1
+1pass:
+  vault: dev-vault
+  account: my-account
+environments:
+  dev:
+    secret: myapp/dev
+    1pass:
+      vault: env-vault

@@ -1,18 +1,20 @@
+// Package cmd implements the CLI commands for envctl.
+// This file contains the export command for outputting secrets in various formats.
 package cmd
 
 import (
 	"context"
 	"os"
 
-	"github.com/sentiolabs/envctl/internal/config"
-	"github.com/sentiolabs/envctl/internal/env"
 	"github.com/sentiolabs/envctl/internal/output"
 	"github.com/spf13/cobra"
 )
 
+// Command flags and definition for export command.
 var (
 	exportFormat string
 
+	// exportCmd outputs secrets in env, shell, or json format.
 	exportCmd = &cobra.Command{
 		Use:   "export",
 		Short: "Output secrets in various formats for shell integration",
@@ -31,58 +33,25 @@ Example:
 	}
 )
 
+// init registers the export command with the root command.
 func init() {
 	exportCmd.Flags().StringVar(&exportFormat, "format", "shell", "output format (env, shell, json)")
 	rootCmd.AddCommand(exportCmd)
 }
 
+// runExport outputs secrets in the requested format.
 func runExport(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	// Parse format
 	format, err := output.ParseFormat(exportFormat)
 	if err != nil {
 		return err
 	}
 
-	// Load config
-	configPath := configFile
-	if configPath == "" {
-		var err error
-		configPath, err = config.FindConfig()
-		if err != nil {
-			return err
-		}
-	}
-	verboseLog("Using config: %s", configPath)
-
-	cfg, err := config.Load(configPath)
+	entries, _, err := loadAndBuild(ctx, cmd, nil)
 	if err != nil {
 		return err
 	}
 
-	// Resolve environment config
-	envConfig, _, err := resolveEnvironmentConfig(cfg)
-	if err != nil {
-		return err
-	}
-	verboseLog("Using environment: %s (secret: %s)", envName, envConfig.Secret)
-
-	// Create secrets client with caching
-	client, err := createSecretsClient(ctx, cfg, envConfig)
-	if err != nil {
-		return err
-	}
-
-	// Build environment
-	builder := env.NewBuilder(client, cfg, appName, envName).
-		WithIncludeAll(getIncludeAllOverride(cmd))
-	entries, err := builder.Build(ctx, nil)
-	if err != nil {
-		return err
-	}
-	verboseLog("Loaded %d environment variables", len(entries))
-
-	// Write output
 	return output.Write(os.Stdout, entries, format)
 }

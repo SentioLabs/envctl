@@ -64,7 +64,7 @@ get_installed_version() {
     if command -v envctl &> /dev/null; then
         local version_output
         version_output=$(envctl version 2>/dev/null || echo "")
-        echo "$version_output" | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+'
+        echo "$version_output" | head -1 | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true
     fi
 }
 

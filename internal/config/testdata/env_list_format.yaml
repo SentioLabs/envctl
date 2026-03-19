@@ -1,0 +1,16 @@
+version: 1
+default_environment: dev
+environments:
+  dev:
+    - secret: primary/dev
+    - secret: shared/datadog
+      key: api_key
+      as: DD_API_KEY
+    - secret: shared/database
+      aws:
+        region: us-east-1
+      keys:
+        - key: db_host
+          as: DATABASE_HOST
+        - key: db_pass
+          as: DATABASE_PASSWORD

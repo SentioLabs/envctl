@@ -1,0 +1,7 @@
+version: 1
+aws:
+  region: us-east-1
+default_backend: aws
+environments:
+  dev:
+    - secret: myapp/dev

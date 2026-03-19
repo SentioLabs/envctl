@@ -3,6 +3,7 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -32,12 +33,12 @@ type Config struct {
 	Version            int                     `yaml:"version"`
 	DefaultApplication string                  `yaml:"default_application,omitempty"`
 	DefaultEnvironment string                  `yaml:"default_environment,omitempty"`
+	DefaultBackend     string                  `yaml:"default_backend,omitempty"`
 	IncludeAll         *bool                   `yaml:"include_all,omitempty"`
 	AWS                *AWSConfig              `yaml:"aws,omitempty"`
 	OnePass            *OnePassConfig          `yaml:"1pass,omitempty"`
 	Applications       map[string]*Application `yaml:"applications,omitempty"`
 	Environments       map[string]Environment  `yaml:"environments,omitempty"`
-	Include            []IncludeEntry          `yaml:"include,omitempty"`
 	Mapping            map[string]string       `yaml:"mapping,omitempty"`
 	Cache              *CacheConfig            `yaml:"cache,omitempty"`
 }
@@ -47,7 +48,6 @@ type Config struct {
 //nolint:tagliatelle // Using snake_case for YAML field names is intentional
 type Application struct {
 	Environments map[string]Environment `yaml:",inline"`
-	Include      []IncludeEntry         `yaml:"include,omitempty"`
 	Mapping      map[string]string      `yaml:"mapping,omitempty"`
 	IncludeAll   *bool                  `yaml:"include_all,omitempty"`
 }
@@ -72,20 +72,115 @@ type OnePassConfig struct {
 }
 
 // Environment represents a single environment configuration.
-//
-//nolint:tagliatelle // Using snake_case for YAML field names is intentional
+// It supports two YAML formats:
+//   - Mapping (legacy): {secret: "...", aws: {...}} → single-entry Sources
+//   - Sequence (new): [{secret: "..."}, {secret: "...", aws: {...}}] → multi-entry Sources
 type Environment struct {
-	Secret     string         `yaml:"secret"` //nolint:gosec // G117: not credentials
-	IncludeAll *bool          `yaml:"include_all,omitempty"`
-	AWS        *AWSConfig     `yaml:"aws,omitempty"`
-	OnePass    *OnePassConfig `yaml:"1pass,omitempty"`
+	Sources    []IncludeEntry // Populated by UnmarshalYAML
+	IncludeAll *bool          // Populated by UnmarshalYAML (legacy format only)
+	AWS        *AWSConfig     // First source's backend (for primary client creation)
+	OnePass    *OnePassConfig // First source's backend (for primary client creation)
+}
+
+// NewEnvironment creates an Environment from a list of sources.
+// Backend config (AWS/OnePass) is set from the first source.
+// If the first source has a backend field but no explicit config block,
+// an empty config struct is promoted to enable backend resolution.
+func NewEnvironment(sources ...IncludeEntry) Environment {
+	env := Environment{Sources: sources}
+	if len(sources) > 0 {
+		PromoteBackend(&env.Sources[0])
+		env.AWS = env.Sources[0].AWS
+		env.OnePass = env.Sources[0].OnePass
+	}
+	return env
+}
+
+// Secret returns the primary secret reference (from the first source).
+func (e *Environment) Secret() string {
+	if len(e.Sources) > 0 {
+		return e.Sources[0].Secret
+	}
+	return ""
+}
+
+// PromoteBackend converts a backend field value into an empty config struct
+// when no explicit aws:/1pass: block is present. This enables the existing
+// ResolveBackend logic to detect the correct backend.
+func PromoteBackend(src *IncludeEntry) {
+	if src.Backend == "" || src.AWS != nil || src.OnePass != nil {
+		return
+	}
+	switch src.Backend {
+	case BackendAWS:
+		src.AWS = &AWSConfig{}
+	case Backend1Pass:
+		src.OnePass = &OnePassConfig{}
+	}
+}
+
+// UnmarshalYAML implements custom YAML unmarshaling to support both
+// legacy mapping format and new sequence format.
+func (e *Environment) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.MappingNode:
+		// Legacy single-secret format: {secret: "...", aws: {...}, include_all: true}
+		//nolint:tagliatelle // Using snake_case for YAML field names is intentional
+		var legacy struct {
+			Secret     string         `yaml:"secret"`            //nolint:gosec // G117: refers to secret ref, not creds
+			Backend    string         `yaml:"backend,omitempty"` // routing hint
+			IncludeAll *bool          `yaml:"include_all,omitempty"`
+			AWS        *AWSConfig     `yaml:"aws,omitempty"`
+			OnePass    *OnePassConfig `yaml:"1pass,omitempty"`
+		}
+		if err := value.Decode(&legacy); err != nil {
+			return err
+		}
+		e.Sources = []IncludeEntry{{
+			Secret:  legacy.Secret,
+			Backend: legacy.Backend,
+			AWS:     legacy.AWS,
+			OnePass: legacy.OnePass,
+		}}
+		PromoteBackend(&e.Sources[0])
+		e.IncludeAll = legacy.IncludeAll
+		e.AWS = e.Sources[0].AWS
+		e.OnePass = e.Sources[0].OnePass
+		return nil
+	case yaml.SequenceNode:
+		// New list format: [{secret: "..."}, {secret: "...", aws: {...}}]
+		var sources []IncludeEntry
+		if err := value.Decode(&sources); err != nil {
+			return err
+		}
+		e.Sources = sources
+		if len(sources) > 0 {
+			PromoteBackend(&e.Sources[0])
+			e.AWS = e.Sources[0].AWS
+			e.OnePass = e.Sources[0].OnePass
+		}
+		return nil
+	default:
+		return fmt.Errorf("environment must be a mapping or sequence, got %v", value.Kind)
+	}
+}
+
+// KeyMapping represents a single key extraction from a secret with optional renaming.
+type KeyMapping struct {
+	Key string `yaml:"key"`
+	As  string `yaml:"as,omitempty"`
 }
 
 // IncludeEntry represents an additional secret to include.
 type IncludeEntry struct {
-	Secret string `yaml:"secret"` //nolint:gosec // G117: field name refers to a secret reference, not credentials
-	Key    string `yaml:"key,omitempty"`
-	As     string `yaml:"as,omitempty"`
+	//nolint:gosec // G117: field name refers to a secret reference, not credentials
+	Secret  string         `yaml:"secret"`
+	Key     string         `yaml:"key,omitempty"`
+	As      string         `yaml:"as,omitempty"`
+	Keys    []KeyMapping   `yaml:"keys,omitempty"`
+	Backend string         `yaml:"backend,omitempty"` // "aws" or "1pass": routing hint when no aws:/1pass: block
+	AWS     *AWSConfig     `yaml:"aws,omitempty"`
+	OnePass *OnePassConfig `yaml:"1pass,omitempty"`
 }
 
 // Load reads and parses a config file from the given path.
@@ -158,11 +253,28 @@ func (c *Config) Validate(path string) error {
 		}
 	}
 
-	// Validate global backend config: cannot have both aws and 1pass
-	if c.AWS != nil && c.OnePass != nil {
+	// Validate default_backend
+	if c.DefaultBackend != "" {
+		if c.DefaultBackend != BackendAWS && c.DefaultBackend != Backend1Pass {
+			return &errors.ConfigError{
+				Path: path,
+				Message: fmt.Sprintf(
+					"invalid default_backend value %q (must be %q or %q)",
+					c.DefaultBackend, BackendAWS, Backend1Pass,
+				),
+			}
+		}
+		if c.AWS == nil || c.OnePass == nil {
+			return &errors.ConfigError{
+				Path:    path,
+				Message: "default_backend is only valid when both 'aws' and '1pass' are configured",
+			}
+		}
+	}
+	if c.AWS != nil && c.OnePass != nil && c.DefaultBackend == "" {
 		return &errors.ConfigError{
 			Path:    path,
-			Message: "cannot specify both 'aws' and '1pass' at the global level",
+			Message: "default_backend is required when both 'aws' and '1pass' are configured",
 		}
 	}
 
@@ -183,13 +295,8 @@ func (c *Config) Validate(path string) error {
 			}
 		}
 		for envName, env := range app.Environments {
-			if env.Secret == "" {
-				msg := "application " + appName + " environment " + envName +
-					" is missing required 'secret' field"
-				return &errors.ConfigError{
-					Path:    path,
-					Message: msg,
-				}
+			if err := validateEnvironment(env, "application "+appName+" environment "+envName, path); err != nil {
+				return err
 			}
 		}
 	}
@@ -214,34 +321,99 @@ func (c *Config) Validate(path string) error {
 		}
 	}
 
-	// Validate per-environment: cannot have both aws and 1pass
+	// Validate per-environment sources
 	for envName, env := range c.Environments {
-		if env.Secret == "" {
-			return &errors.ConfigError{
-				Path:    path,
-				Message: "environment " + envName + " is missing required 'secret' field",
-			}
-		}
-		if env.AWS != nil && env.OnePass != nil {
-			return &errors.ConfigError{
-				Path:    path,
-				Message: "environment " + envName + " cannot specify both 'aws' and '1pass'",
-			}
+		if err := validateEnvironment(env, "environment "+envName, path); err != nil {
+			return err
 		}
 	}
 
-	// Same check for application environments
-	for appName, app := range c.Applications {
-		for envName, env := range app.Environments {
-			if env.AWS != nil && env.OnePass != nil {
-				return &errors.ConfigError{
-					Path:    path,
-					Message: "application " + appName + " environment " + envName + " cannot specify both 'aws' and '1pass'",
-				}
+	return nil
+}
+
+// validateEnvironment validates a single environment's sources.
+func validateEnvironment(env Environment, location, path string) error {
+	if len(env.Sources) == 0 || env.Sources[0].Secret == "" {
+		return &errors.ConfigError{
+			Path:    path,
+			Message: location + " is missing required 'secret' field",
+		}
+	}
+	for i, src := range env.Sources {
+		if src.Secret == "" {
+			return &errors.ConfigError{
+				Path:    path,
+				Message: fmt.Sprintf("%s source[%d] is missing required 'secret' field", location, i),
+			}
+		}
+		if src.AWS != nil && src.OnePass != nil {
+			return &errors.ConfigError{
+				Path:    path,
+				Message: fmt.Sprintf("%s source[%d] cannot specify both 'aws' and '1pass'", location, i),
+			}
+		}
+		if err := validateBackendField(src, fmt.Sprintf("%s source[%d]", location, i), path); err != nil {
+			return err
+		}
+		loc := fmt.Sprintf("%s source[%d]", location, i)
+		if err := validateIncludeKeys(src, loc, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateBackendField checks that the backend field value is valid and doesn't conflict
+// with explicit aws:/1pass: blocks.
+func validateBackendField(src IncludeEntry, location, path string) error {
+	if src.Backend == "" {
+		return nil
+	}
+	if src.Backend != BackendAWS && src.Backend != Backend1Pass {
+		return &errors.ConfigError{
+			Path: path,
+			Message: fmt.Sprintf(
+				"%s has invalid backend value %q (must be %q or %q)",
+				location, src.Backend, BackendAWS, Backend1Pass,
+			),
+		}
+	}
+	// Check for conflicts: backend field says one thing, explicit block says another.
+	// Note: after PromoteBackend(), a non-conflicting backend will have set the matching
+	// config struct. So we check the *original* Backend value against the *opposite* config.
+	// Since PromoteBackend only sets the matching struct when the other is nil, a conflict
+	// means the user explicitly set a block for the opposite backend.
+	if src.Backend == BackendAWS && src.OnePass != nil {
+		return &errors.ConfigError{
+			Path:    path,
+			Message: fmt.Sprintf("%s has backend %q but also specifies '1pass' block", location, src.Backend),
+		}
+	}
+	if src.Backend == Backend1Pass && src.AWS != nil {
+		return &errors.ConfigError{
+			Path:    path,
+			Message: fmt.Sprintf("%s has backend %q but also specifies 'aws' block", location, src.Backend),
+		}
+	}
+	return nil
+}
+
+// validateIncludeKeys checks that key and keys are not both set, and that keys entries have non-empty key fields.
+func validateIncludeKeys(inc IncludeEntry, location, path string) error {
+	if inc.Key != "" && len(inc.Keys) > 0 {
+		return &errors.ConfigError{
+			Path:    path,
+			Message: location + " cannot specify both 'key' and 'keys'",
+		}
+	}
+	for j, km := range inc.Keys {
+		if km.Key == "" {
+			return &errors.ConfigError{
+				Path:    path,
+				Message: fmt.Sprintf("%s keys[%d] is missing required 'key' field", location, j),
 			}
 		}
 	}
-
 	return nil
 }
 
@@ -355,7 +527,7 @@ func (c *Config) CacheBackend() string {
 }
 
 // ResolveBackend determines the backend for a given environment.
-// Precedence: environment block > global block > default (aws).
+// Precedence: environment block > default_backend > global block > default (aws).
 func (c *Config) ResolveBackend(env *Environment) string {
 	if env != nil {
 		if env.OnePass != nil {
@@ -364,6 +536,9 @@ func (c *Config) ResolveBackend(env *Environment) string {
 		if env.AWS != nil {
 			return BackendAWS
 		}
+	}
+	if c.DefaultBackend != "" {
+		return c.DefaultBackend
 	}
 	if c.OnePass != nil {
 		return Backend1Pass

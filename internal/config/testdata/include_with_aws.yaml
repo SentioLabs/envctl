@@ -1,0 +1,8 @@
+version: 1
+environments:
+  dev:
+    - secret: myapp/dev
+    - secret: shared/datadog
+      aws:
+        region: eu-west-1
+        profile: datadog-profile

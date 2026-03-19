@@ -1,6 +1,4 @@
-package docs
-
-const Patterns = `Common Integration Patterns
+Common Integration Patterns
 ===========================
 
 Docker Compose
@@ -103,7 +101,7 @@ Option 2: Shared config (centralized)
       worker/
         run-local.sh
 
-Root .envctl.yaml uses application mode:
+Root .envctl.yaml uses application mode with source lists:
 
   version: 1
   default_environment: dev
@@ -111,14 +109,12 @@ Root .envctl.yaml uses application mode:
   applications:
     api:
       dev:
-        secret: myorg/api/dev
+        - secret: myorg/api/dev
+        - secret: shared/datadog     # Shared across apps
     worker:
       dev:
-        secret: myorg/worker/dev
-
-  # Shared across all apps
-  include:
-    - secret: shared/datadog
+        - secret: myorg/worker/dev
+        - secret: shared/datadog
 
 Run from anywhere:
 
@@ -165,7 +161,8 @@ Note: --no-cache is recommended in CI to avoid stale secrets.
 Multiple AWS Accounts
 ---------------------
 
-If dev/staging/prod are in different AWS accounts:
+If dev/staging/prod are in different AWS accounts, use per-source
+aws: blocks for region/profile overrides:
 
   version: 1
   default_environment: dev
@@ -191,4 +188,39 @@ Each environment's aws.profile is used automatically:
 
   envctl -e dev run -- make dev         # uses 'dev' profile
   envctl -e staging run -- make dev     # uses 'staging' profile
-`
+
+Cross-Backend Sources
+---------------------
+
+Mix 1Password and AWS Secrets Manager in the same environment.
+When both backends are configured globally, set default_backend to
+declare which backend sources use by default:
+
+  version: 1
+  default_environment: dev
+
+  1pass:
+    vault: Development
+
+  aws:
+    region: us-east-1
+
+  default_backend: 1pass            # Required when both backends configured
+
+  environments:
+    dev:
+      - secret: My App Secrets      # Uses 1pass (default_backend)
+
+      - secret: shared/aws-config   # Routes to AWS
+        backend: aws
+        keys:
+          - key: database_host
+            as: DATABASE_HOST
+          - key: database_password
+            as: DATABASE_PASSWORD
+
+Later sources in the list override earlier ones when keys conflict.
+
+You can also use inline aws: or 1pass: blocks on source entries for
+per-source overrides (region, profile, vault) without needing the
+backend: routing hint.

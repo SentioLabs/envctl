@@ -2,6 +2,32 @@
 
 All notable changes to envctl will be documented in this file.
 
+## [0.4.0](https://github.com/SentioLabs/envctl/compare/v0.3.1...v0.4.0) (2026-03-06)
+
+
+### Features
+
+* **config,env:** env-filtered includes, cross-backend resolution, and fixture migration ([ddab1f9](https://github.com/SentioLabs/envctl/commit/ddab1f95854b297fe0df5d4bce9f8bfdd5cc5120))
+* **config,env:** env-keyed includes with backend qualifiers and ClientFactory ([930001e](https://github.com/SentioLabs/envctl/commit/930001e13ccdcc170258cf84804b0feb674483fa))
+* **config,env:** replace include maps with ordered source lists per environment ([dcb2e6a](https://github.com/SentioLabs/envctl/commit/dcb2e6ad062ed4100c6f8864bf06e398e80bd007))
+
+## [0.3.1](https://github.com/SentioLabs/envctl/compare/v0.3.0...v0.3.1) (2026-03-04)
+
+
+### Bug Fixes
+
+* **install:** prevent silent exit when version lacks v prefix ([18a51bc](https://github.com/SentioLabs/envctl/commit/18a51bc53eeae4cb24671f2838171e49b904b452))
+
+## [0.3.0](https://github.com/SentioLabs/envctl/compare/v0.2.0...v0.3.0) (2026-03-03)
+
+
+### Features
+
+* **cmd:** wire per-environment backend resolution into CLI commands ([8ada2fc](https://github.com/SentioLabs/envctl/commit/8ada2fcdb6c9a95486ac750f70afb60a9c936659))
+* **config:** add backend resolution methods to Config ([40d928c](https://github.com/SentioLabs/envctl/commit/40d928c6884f4b01355525c06c2bea4802a22b90))
+* **config:** restructure types for per-environment backend selection ([82fc851](https://github.com/SentioLabs/envctl/commit/82fc8516ca0d12eaf570cd22bb96faf187bbd723))
+* **secrets:** update factory to use per-environment backend resolution ([77b2d0d](https://github.com/SentioLabs/envctl/commit/77b2d0daf73bc8b49bd7d948069832c763a6de80))
+
 ## [0.2.0](https://github.com/SentioLabs/envctl/compare/v0.1.1...v0.2.0) (2026-03-03)
 
 
