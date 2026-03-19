@@ -159,6 +159,17 @@ func (m Model) Init() tea.Cmd {
 
 // Update processes messages and delegates to the active screen.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Error state: any key quits.
+	if m.err != nil {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.Type {
+			case tea.KeyCtrlC, tea.KeyRunes:
+				return m, tea.Quit
+			}
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
