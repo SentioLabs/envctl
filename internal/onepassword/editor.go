@@ -131,24 +131,35 @@ func (e *OPEditor) ListEditorItems(ctx context.Context, vault string) ([]EditorI
 	return result, nil
 }
 
-// GetEditorFields returns all fields for a 1Password item.
+// GetEditorFields returns user-created fields for a 1Password item.
+// Skips structural fields (those with a Purpose like "NOTES", "USERNAME", "PASSWORD")
+// and fields without labels, matching the read path's DefaultFieldFilter behavior.
 func (e *OPEditor) GetEditorFields(ctx context.Context, ref string) ([]EditorField, error) {
 	item, err := e.fetchItem(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]EditorField, len(item.Fields))
-	for i, f := range item.Fields {
-		result[i] = EditorField{
+	var result []EditorField
+	for _, f := range item.Fields {
+		// Skip structural fields (notesPlain, username, password)
+		if f.Purpose != "" {
+			continue
+		}
+		// Skip fields without labels
+		if f.Label == "" {
+			continue
+		}
+		ef := EditorField{
 			ID:    f.ID,
 			Key:   f.Label,
 			Value: f.Value,
 			Type:  mapFieldType(f.Type),
 		}
 		if f.Section != nil {
-			result[i].Section = f.Section.Label
+			ef.Section = f.Section.Label
 		}
+		result = append(result, ef)
 	}
 	return result, nil
 }
