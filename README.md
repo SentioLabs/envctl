@@ -66,6 +66,7 @@ A lightweight CLI tool that enables developers to use a secrets manager as the s
 - **Biometric authentication** - 1Password backend supports Touch ID, Windows Hello, and other biometrics
 - **Docker Compose compatible** - Full support for `.env` file workflows
 - **Intelligent caching** - Secure local caching reduces API calls and improves performance (AWS backend)
+- **Interactive secret editor** - Browse and edit secrets with a TUI (`envctl edit`)
 - **Self-updating** - Update to the latest version with `envctl self update`
 
 ## Installation
@@ -864,9 +865,45 @@ Flags:
   --secret REF   Get from specific secret (format: secret_name#key)
 ```
 
+#### `envctl edit`
+
+Interactive TUI for browsing and editing secrets.
+
+When `.envctl.yaml` exists, uses config-driven mode — navigates by application, environment, and secret references from the config. Use `--browse` to skip config-driven mode and browse all vaults/secrets directly.
+
+```bash
+envctl edit [flags]
+
+Flags:
+  --vault NAME   Pre-select vault (skip vault picker)
+  --item NAME    Pre-select item (skip to field editor, requires --vault)
+  --browse       Browse all vaults/secrets (skip config-driven mode)
+
+Examples:
+  envctl edit                                    # Config-driven mode
+  envctl edit --browse                           # Browse all vaults
+  envctl edit --app core-api --env local         # Skip to secret list
+  envctl edit --vault BACstack --item "Core API" # Skip to field editor
+```
+
+Keybindings in the field editor:
+
+| Key | Action |
+|-----|--------|
+| `enter` / `e` | Edit field value |
+| `d` | Delete field (with confirmation) |
+| `r` | Rename field key |
+| `t` | Toggle concealed/text type (1Password only) |
+| `n` | Add new field |
+| `/` | Filter fields |
+| `s` | Save pending changes |
+| `Ctrl+U` / `Ctrl+D` | Page up / page down |
+| `Esc` | Clear filter, or go back (with discard confirmation if unsaved) |
+| `q` | Quit (with discard confirmation if unsaved) |
+
 #### `envctl validate`
 
-Validate configuration and AWS connectivity.
+Validate configuration and backend connectivity.
 
 ```bash
 envctl validate
