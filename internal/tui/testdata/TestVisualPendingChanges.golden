@@ -10,4 +10,4 @@ op://BACstack/Test Item
                      
   2 pending change(s)
 
-enter/e:edit  d:delete  r:rename  t:toggle  n:new  /:filter  s:save  esc:back  q:quit
+enter/e:edit  v:reveal  d:delete  r:rename  t:toggle  n:new  /:filter  s:save  esc:back  q:quit

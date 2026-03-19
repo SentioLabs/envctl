@@ -58,6 +58,7 @@ type FieldEditor struct {
 	pendingAction   pendingActionType // what to do after discard confirm
 	filterText      string            // current filter query
 	filteredIndices []int             // indices into fields that match filter
+	revealed        map[int]bool     // field indices with concealed values shown
 	height          int              // terminal height for viewport scrolling
 	viewportOffset  int              // first visible row index
 	back            bool
@@ -253,6 +254,13 @@ func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		case "s":
 			if len(m.changes) > 0 {
 				m.saving = true
+			}
+		case "v":
+			if idx >= 0 && m.fields[idx].Type == secrets.FieldConcealed {
+				if m.revealed == nil {
+					m.revealed = make(map[int]bool)
+				}
+				m.revealed[idx] = !m.revealed[idx]
 			}
 		case "d":
 			if idx >= 0 {
@@ -519,7 +527,7 @@ func (m FieldEditor) View() string {
 			keyWidth = len(f.Key)
 		}
 		v := f.Value
-		if f.Type == secrets.FieldConcealed {
+		if f.Type == secrets.FieldConcealed && !m.revealed[fi] {
 			v = concealedPlaceholder
 		}
 		if len(v) > valWidth {
@@ -547,11 +555,12 @@ func (m FieldEditor) View() string {
 		}
 
 		displayValue := f.Value
-		if f.Type == secrets.FieldConcealed {
+		if f.Type == secrets.FieldConcealed && !m.revealed[fi] {
 			displayValue = concealedPlaceholder
 		}
-		// Truncate long values to keep columns aligned
-		if len(displayValue) > valWidth {
+		// Truncate long values to keep columns aligned, but show full value when revealed
+		isRevealed := f.Type == secrets.FieldConcealed && m.revealed[fi]
+		if len(displayValue) > valWidth && !isRevealed {
 			displayValue = displayValue[:valWidth-1] + "…"
 		}
 
@@ -614,9 +623,9 @@ func (m FieldEditor) View() string {
 	}
 
 	// Help
-	helpText := "enter/e:edit  d:delete  r:rename  n:new  /:filter  s:save  esc:back  q:quit"
+	helpText := "enter/e:edit  v:reveal  d:delete  r:rename  n:new  /:filter  s:save  esc:back  q:quit"
 	if m.hasTypeEditor {
-		helpText = "enter/e:edit  d:delete  r:rename  t:toggle  n:new  /:filter  s:save  esc:back  q:quit"
+		helpText = "enter/e:edit  v:reveal  d:delete  r:rename  t:toggle  n:new  /:filter  s:save  esc:back  q:quit"
 	}
 	b.WriteString("\n")
 	b.WriteString(Help.Render(helpText))
