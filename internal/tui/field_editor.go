@@ -19,6 +19,7 @@ const (
 	modeNewFieldValue
 	modeConfirmDelete
 	modeConfirmDiscard
+	modeFilter
 )
 
 // concealedPlaceholder is displayed instead of the actual value for concealed fields.
@@ -53,9 +54,11 @@ type FieldEditor struct {
 	hasTypeEditor bool
 	itemRef       string
 	itemName      string
-	newFieldKey   string            // temp storage during new-field flow
-	pendingAction pendingActionType // what to do after discard confirm
-	back          bool
+	newFieldKey     string            // temp storage during new-field flow
+	pendingAction   pendingActionType // what to do after discard confirm
+	filterText      string            // current filter query
+	filteredIndices []int             // indices into fields that match filter
+	back            bool
 	saving        bool
 	quitting      bool
 }
@@ -73,6 +76,46 @@ func NewFieldEditor(itemRef, itemName string, fields []secrets.Field, hasTypeEdi
 		input:         ti,
 		mode:          modeNormal,
 	}
+}
+
+// applyFilter recalculates filteredIndices based on filterText.
+func (m *FieldEditor) applyFilter() {
+	if m.filterText == "" {
+		m.filteredIndices = nil
+		return
+	}
+	query := strings.ToLower(m.filterText)
+	m.filteredIndices = nil
+	for i, f := range m.fields {
+		if strings.Contains(strings.ToLower(f.Key), query) ||
+			strings.Contains(strings.ToLower(f.Value), query) {
+			m.filteredIndices = append(m.filteredIndices, i)
+		}
+	}
+	if m.cursor >= len(m.filteredIndices) {
+		m.cursor = max(0, len(m.filteredIndices)-1)
+	}
+}
+
+// visibleFields returns the indices to display (filtered or all).
+func (m FieldEditor) visibleFields() []int {
+	if m.filteredIndices != nil {
+		return m.filteredIndices
+	}
+	indices := make([]int, len(m.fields))
+	for i := range m.fields {
+		indices[i] = i
+	}
+	return indices
+}
+
+// realIndex maps the cursor position to the actual index in m.fields.
+func (m FieldEditor) realIndex() int {
+	visible := m.visibleFields()
+	if len(visible) == 0 {
+		return -1
+	}
+	return visible[m.cursor]
 }
 
 // Init returns nil; no initial command is needed.
@@ -95,6 +138,8 @@ func (m FieldEditor) Update(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		return m.updateConfirmDelete(msg)
 	case modeConfirmDiscard:
 		return m.updateConfirmDiscard(msg)
+	case modeFilter:
+		return m.updateFilter(msg)
 	default:
 		return m.updateNormal(msg)
 	}
@@ -106,16 +151,26 @@ func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		return m, nil
 	}
 
+	visible := m.visibleFields()
+	idx := m.realIndex()
+
 	switch keyMsg.Type {
 	case tea.KeyUp:
 		if m.cursor > 0 {
 			m.cursor--
 		}
 	case tea.KeyDown:
-		if m.cursor < len(m.fields)-1 {
+		if m.cursor < len(visible)-1 {
 			m.cursor++
 		}
 	case tea.KeyEscape:
+		// If filtering, clear filter first
+		if m.filterText != "" {
+			m.filterText = ""
+			m.filteredIndices = nil
+			m.cursor = 0
+			return m, nil
+		}
 		if len(m.changes) > 0 {
 			m.mode = modeConfirmDiscard
 			m.confirm = NewConfirm(fmt.Sprintf("Discard %d unsaved change(s)?", len(m.changes)))
@@ -124,34 +179,45 @@ func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		}
 		m.back = true
 	case tea.KeyEnter:
-		if len(m.fields) > 0 {
+		if idx >= 0 {
 			m.mode = modeEdit
-			m.input.SetValue(m.fields[m.cursor].Value)
+			m.input.SetValue(m.fields[idx].Value)
 			m.input.CursorEnd()
 			return m, m.input.Focus()
 		}
 	case tea.KeyRunes:
 		switch string(keyMsg.Runes) {
-		case "e":
-			m.mode = modeEdit
-			m.input.SetValue(m.fields[m.cursor].Value)
+		case "/":
+			m.mode = modeFilter
+			m.input.SetValue(m.filterText)
 			m.input.CursorEnd()
 			return m, m.input.Focus()
+		case "e":
+			if idx >= 0 {
+				m.mode = modeEdit
+				m.input.SetValue(m.fields[idx].Value)
+				m.input.CursorEnd()
+				return m, m.input.Focus()
+			}
 		case "s":
 			if len(m.changes) > 0 {
 				m.saving = true
 			}
 		case "d":
-			m.mode = modeConfirmDelete
-			m.confirm = NewConfirm(fmt.Sprintf("Delete %s?", m.fields[m.cursor].Key))
+			if idx >= 0 {
+				m.mode = modeConfirmDelete
+				m.confirm = NewConfirm(fmt.Sprintf("Delete %s?", m.fields[idx].Key))
+			}
 		case "r":
-			m.mode = modeRename
-			m.input.SetValue(m.fields[m.cursor].Key)
-			m.input.CursorEnd()
-			return m, m.input.Focus()
+			if idx >= 0 {
+				m.mode = modeRename
+				m.input.SetValue(m.fields[idx].Key)
+				m.input.CursorEnd()
+				return m, m.input.Focus()
+			}
 		case "t":
-			if m.hasTypeEditor {
-				field := m.fields[m.cursor]
+			if m.hasTypeEditor && idx >= 0 {
+				field := m.fields[idx]
 				newType := secrets.FieldConcealed
 				if field.Type == secrets.FieldConcealed {
 					newType = secrets.FieldText
@@ -161,7 +227,7 @@ func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 					Field:   field,
 					NewType: newType,
 				})
-				m.fields[m.cursor].Type = newType
+				m.fields[idx].Type = newType
 			}
 		case "n":
 			m.mode = modeNewFieldKey
@@ -189,15 +255,17 @@ func (m FieldEditor) updateEdit(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		return m, cmd
 	}
 
+	idx := m.realIndex()
+
 	switch keyMsg.Type {
 	case tea.KeyEnter:
-		field := m.fields[m.cursor]
+		field := m.fields[idx]
 		field.Value = m.input.Value()
 		m.changes = append(m.changes, PendingChange{
 			Type:  "update",
 			Field: field,
 		})
-		m.fields[m.cursor].Value = m.input.Value()
+		m.fields[idx].Value = m.input.Value()
 		m.mode = modeNormal
 		return m, nil
 	case tea.KeyEscape:
@@ -218,17 +286,19 @@ func (m FieldEditor) updateRename(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		return m, cmd
 	}
 
+	idx := m.realIndex()
+
 	switch keyMsg.Type {
 	case tea.KeyEnter:
-		oldKey := m.fields[m.cursor].Key
-		field := m.fields[m.cursor]
+		oldKey := m.fields[idx].Key
+		field := m.fields[idx]
 		field.Key = m.input.Value()
 		m.changes = append(m.changes, PendingChange{
 			Type:   "rename",
 			Field:  field,
 			OldKey: oldKey,
 		})
-		m.fields[m.cursor].Key = m.input.Value()
+		m.fields[idx].Key = m.input.Value()
 		m.mode = modeNormal
 		return m, nil
 	case tea.KeyEscape:
@@ -304,17 +374,45 @@ func (m FieldEditor) updateConfirmDelete(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	m.confirm, cmd = m.confirm.Update(msg)
 
 	if m.confirm.Confirmed() {
-		field := m.fields[m.cursor]
-		m.changes = append(m.changes, PendingChange{
-			Type:  "delete",
-			Field: field,
-		})
+		idx := m.realIndex()
+		if idx >= 0 {
+			field := m.fields[idx]
+			m.changes = append(m.changes, PendingChange{
+				Type:  "delete",
+				Field: field,
+			})
+		}
 		m.mode = modeNormal
 	} else if m.confirm.Dismissed() {
 		m.mode = modeNormal
 	}
 
 	return m, cmd
+}
+
+func (m FieldEditor) updateFilter(msg tea.Msg) (FieldEditor, tea.Cmd) {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		return m, cmd
+	}
+
+	switch keyMsg.Type {
+	case tea.KeyEnter, tea.KeyEscape:
+		// Accept filter and return to normal mode
+		m.filterText = m.input.Value()
+		m.applyFilter()
+		m.mode = modeNormal
+		return m, nil
+	default:
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		// Live-filter as user types
+		m.filterText = m.input.Value()
+		m.applyFilter()
+		return m, cmd
+	}
 }
 
 func (m FieldEditor) updateConfirmDiscard(msg tea.Msg) (FieldEditor, tea.Cmd) {
@@ -344,12 +442,21 @@ func (m FieldEditor) View() string {
 	b.WriteString(Title.Render(fmt.Sprintf("Fields: %s", m.itemName)))
 	b.WriteString("\n")
 	b.WriteString(Subtitle.Render(m.itemRef))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 
-	// Render field table
-	for i, f := range m.fields {
+	// Show active filter
+	if m.filterText != "" && m.mode != modeFilter {
+		b.WriteString(StatusBar.Render(fmt.Sprintf("  filter: %s", m.filterText)))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+
+	// Render field table (filtered)
+	visible := m.visibleFields()
+	for vi, fi := range visible {
+		f := m.fields[fi]
 		cursor := "  "
-		if i == m.cursor {
+		if vi == m.cursor {
 			cursor = "> "
 		}
 
@@ -359,7 +466,7 @@ func (m FieldEditor) View() string {
 		}
 
 		line := fmt.Sprintf("%s%-20s  %-30s  %s", cursor, f.Key, displayValue, string(f.Type))
-		if i == m.cursor {
+		if vi == m.cursor {
 			b.WriteString(Selected.Render(line))
 		} else {
 			b.WriteString(line)
@@ -367,15 +474,25 @@ func (m FieldEditor) View() string {
 		b.WriteString("\n")
 	}
 
+	if len(visible) == 0 && m.filterText != "" {
+		b.WriteString(Subtitle.Render("  No fields match filter"))
+		b.WriteString("\n")
+	}
+
 	b.WriteString("\n")
 
 	// Render mode-specific UI
+	idx := m.realIndex()
 	switch m.mode {
 	case modeEdit:
-		b.WriteString(fmt.Sprintf("  Edit value for %s:\n", m.fields[m.cursor].Key))
+		if idx >= 0 {
+			b.WriteString(fmt.Sprintf("  Edit value for %s:\n", m.fields[idx].Key))
+		}
 		b.WriteString("  " + m.input.View() + "\n")
 	case modeRename:
-		b.WriteString(fmt.Sprintf("  Rename %s:\n", m.fields[m.cursor].Key))
+		if idx >= 0 {
+			b.WriteString(fmt.Sprintf("  Rename %s:\n", m.fields[idx].Key))
+		}
 		b.WriteString("  " + m.input.View() + "\n")
 	case modeNewFieldKey:
 		b.WriteString("  New field key:\n")
@@ -383,6 +500,10 @@ func (m FieldEditor) View() string {
 	case modeNewFieldValue:
 		b.WriteString(fmt.Sprintf("  Value for %s:\n", m.newFieldKey))
 		b.WriteString("  " + m.input.View() + "\n")
+	case modeFilter:
+		b.WriteString("  Filter: ")
+		b.WriteString(m.input.View())
+		b.WriteString("\n")
 	case modeConfirmDelete:
 		b.WriteString(m.confirm.View())
 	case modeConfirmDiscard:
@@ -397,9 +518,9 @@ func (m FieldEditor) View() string {
 	}
 
 	// Help
-	helpText := "enter/e:edit  d:delete  r:rename  n:new  s:save  esc:back  q:quit"
+	helpText := "enter/e:edit  d:delete  r:rename  n:new  /:filter  s:save  esc:back  q:quit"
 	if m.hasTypeEditor {
-		helpText = "enter/e:edit  d:delete  r:rename  t:toggle  n:new  s:save  esc:back  q:quit"
+		helpText = "enter/e:edit  d:delete  r:rename  t:toggle  n:new  /:filter  s:save  esc:back  q:quit"
 	}
 	b.WriteString("\n")
 	b.WriteString(Help.Render(helpText))
