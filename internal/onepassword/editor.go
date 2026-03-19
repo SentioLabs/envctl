@@ -325,6 +325,32 @@ func (e *OPEditor) SetEditorFieldType(ctx context.Context, ref, key, section str
 	return err
 }
 
+// BatchEdit runs a single `op item edit` with multiple assignment expressions.
+// This is significantly faster than individual calls since it's one CLI invocation.
+func (e *OPEditor) BatchEdit(ctx context.Context, ref string, assignments []string) error {
+	if len(assignments) == 0 {
+		return nil
+	}
+
+	parsedRef, err := ParseReference(ref)
+	if err != nil {
+		return fmt.Errorf("invalid reference %q: %w", ref, err)
+	}
+	if parsedRef.Vault == "" {
+		parsedRef.Vault = e.defaultVault
+	}
+
+	args := []string{"item", "edit", parsedRef.Item}
+	args = append(args, assignments...)
+	args = append(args, "--vault", parsedRef.Vault)
+	if e.account != "" {
+		args = append(args, "--account", e.account)
+	}
+
+	_, err = e.runCmd(ctx, args...)
+	return err
+}
+
 // fetchItem retrieves a 1Password item using the mock-able runCmd.
 func (e *OPEditor) fetchItem(ctx context.Context, ref string) (*Item, error) {
 	parsedRef, err := ParseReference(ref)

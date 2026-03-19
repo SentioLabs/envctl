@@ -462,6 +462,8 @@ func (m Model) createEditorForBrowse() tea.Cmd {
 }
 
 // saveChanges returns a command that applies pending changes via the editor.
+// Uses BatchSaver if the backend supports it (1Password), otherwise falls
+// back to sequential individual calls (AWS).
 func (m Model) saveChanges(changes []PendingChange) tea.Cmd {
 	// Determine the secret reference for API calls.
 	ref := m.currentSourceRef
@@ -471,6 +473,25 @@ func (m Model) saveChanges(changes []PendingChange) tea.Cmd {
 
 	return func() tea.Msg {
 		ctx := context.Background()
+
+		// Try batched save first (1Password supports this)
+		if bs, ok := m.editor.(secrets.BatchSaver); ok {
+			batch := make([]secrets.Change, len(changes))
+			for i, c := range changes {
+				batch[i] = secrets.Change{
+					Type:    c.Type,
+					Field:   c.Field,
+					OldKey:  c.OldKey,
+					NewType: c.NewType,
+				}
+			}
+			if err := bs.BatchSave(ctx, ref, batch); err != nil {
+				return saveCompleteMsg{err: err}
+			}
+			return saveCompleteMsg{}
+		}
+
+		// Fallback: sequential saves (AWS)
 		for _, c := range changes {
 			var err error
 			switch c.Type {

@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/sentiolabs/envctl/internal/aws"
 	"github.com/sentiolabs/envctl/internal/cache"
@@ -13,6 +14,7 @@ import (
 var (
 	_ Editor          = (*opEditorAdapter)(nil)
 	_ FieldTypeEditor = (*opEditorAdapter)(nil)
+	_ BatchSaver      = (*opEditorAdapter)(nil)
 	_ Editor          = (*awsEditorAdapter)(nil)
 )
 
@@ -326,4 +328,48 @@ func (a *opEditorAdapter) CreateItem(ctx context.Context, vault, name string, fi
 // SetFieldType delegates field type change to the 1Password editor.
 func (a *opEditorAdapter) SetFieldType(ctx context.Context, ref string, field Field, ft FieldType) error {
 	return a.opEditor.SetEditorFieldType(ctx, ref, field.Key, field.Section, onepassword.FieldType(ft))
+}
+
+// BatchSave batches all changes into minimal op item edit calls.
+// Regular changes (update, delete, rename) are combined into one call.
+// Type changes use different syntax and go in a second call.
+func (a *opEditorAdapter) BatchSave(ctx context.Context, ref string, changes []Change) error {
+	var assignments []string
+	var typeAssignments []string
+
+	for _, c := range changes {
+		fieldRef := c.Field.Key
+		if c.Field.Section != "" {
+			fieldRef = c.Field.Section + "." + c.Field.Key
+		}
+
+		switch c.Type {
+		case "update":
+			assignments = append(assignments, fmt.Sprintf("%s=%s", fieldRef, c.Field.Value))
+		case "delete":
+			assignments = append(assignments, fieldRef+"[delete]")
+		case "rename":
+			oldRef := c.OldKey
+			if c.Field.Section != "" {
+				oldRef = c.Field.Section + "." + c.OldKey
+			}
+			// Rename = delete old + create new (in same batch)
+			assignments = append(assignments, oldRef+"[delete]")
+			assignments = append(assignments, fmt.Sprintf("%s=%s", fieldRef, c.Field.Value))
+		case "set_type":
+			opType := "text"
+			if c.NewType == FieldConcealed {
+				opType = "password"
+			}
+			typeAssignments = append(typeAssignments, fmt.Sprintf("%s[%s]=%s", fieldRef, opType, c.Field.Value))
+		}
+	}
+
+	// First batch: regular changes
+	if err := a.opEditor.BatchEdit(ctx, ref, assignments); err != nil {
+		return err
+	}
+
+	// Second batch: type changes (different syntax)
+	return a.opEditor.BatchEdit(ctx, ref, typeAssignments)
 }

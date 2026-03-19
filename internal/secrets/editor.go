@@ -23,3 +23,18 @@ type Editor interface {
 type FieldTypeEditor interface {
 	SetFieldType(ctx context.Context, ref string, field Field, ft FieldType) error
 }
+
+// Change represents a pending modification to apply via BatchSaver.
+type Change struct {
+	Type    string    // "update", "delete", "rename", "set_type"
+	Field   Field     // the field being changed
+	OldKey  string    // original key (for rename)
+	NewType FieldType // target type (for set_type)
+}
+
+// BatchSaver is an optional interface for backends that can apply multiple
+// changes in fewer operations than one-at-a-time. For example, 1Password
+// supports multiple assignments in a single `op item edit` CLI call.
+type BatchSaver interface {
+	BatchSave(ctx context.Context, ref string, changes []Change) error
+}
