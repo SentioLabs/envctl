@@ -2,6 +2,41 @@
 
 All notable changes to envctl will be documented in this file.
 
+## [0.5.0](https://github.com/SentioLabs/envctl/compare/v0.4.0...v0.5.0) (2026-03-19)
+
+
+### Features
+
+* **aws:** implement Editor for TUI secret editing ([11ee95d](https://github.com/SentioLabs/envctl/commit/11ee95d3407fba03cf0d86ca5396e7f3c0e46a48))
+* **cmd:** add config-driven mode and --browse flag to envctl edit ([28e69b2](https://github.com/SentioLabs/envctl/commit/28e69b2d72911b18c430957295b243b5b18461e7))
+* **cmd:** add envctl edit command for interactive secret editing ([55b1e41](https://github.com/SentioLabs/envctl/commit/55b1e411b7cd9fd39a8e988fab2210563d27c3c8))
+* **onepassword:** implement Editor and FieldTypeEditor for TUI editor ([24be4b0](https://github.com/SentioLabs/envctl/commit/24be4b09b7f3c27aa1beb7a9fdf7554876afd09d))
+* **secrets:** add Editor interface, types, and factory for TUI editor ([4e0f07b](https://github.com/SentioLabs/envctl/commit/4e0f07b29d2bf3266aad327db6b968789dab9211))
+* **tui:** add /filter to field editor for searching fields ([ac53ce0](https://github.com/SentioLabs/envctl/commit/ac53ce0be94342a744db25f8a0f5ab74b5d283fe))
+* **tui:** add app picker and env picker screens for config mode ([16b8699](https://github.com/SentioLabs/envctl/commit/16b869967adc5537a8f62dee653e2fe59fccaff8))
+* **tui:** add app shell with screen routing and editor integration ([30ae1f1](https://github.com/SentioLabs/envctl/commit/30ae1f145c67bcadc82ed223b39d4a5cd2a40ac8))
+* **tui:** add config-driven screen routing with EditorFactory ([3803874](https://github.com/SentioLabs/envctl/commit/3803874b458889c359c2caedbe8b9d13d4f0b643))
+* **tui:** add ConfigContext type for config-driven editor mode ([05bf416](https://github.com/SentioLabs/envctl/commit/05bf416af8c3c917fc86cfb3179920fe4e0242d2))
+* **tui:** add enter-to-edit and s-to-save keybindings in field editor ([789986f](https://github.com/SentioLabs/envctl/commit/789986f2cf879aeaf5159020055f5ea51062b69b))
+* **tui:** add field editor screen with CRUD operations ([1d78c17](https://github.com/SentioLabs/envctl/commit/1d78c17056b562e5a32614da8961307a23dfc33e))
+* **tui:** add item list screen with create-item support ([bab9285](https://github.com/SentioLabs/envctl/commit/bab9285d0011bcf3015c57382b26ee20412754f5))
+* **tui:** add Lip Gloss styles and key binding definitions ([9ca6f67](https://github.com/SentioLabs/envctl/commit/9ca6f67b77452b5626f4bc7f694bacf3dd910a16))
+* **tui:** add secret list screen with backend badges ([a98673b](https://github.com/SentioLabs/envctl/commit/a98673b77cac08a2552af9d11f5c2f45e9140343))
+* **tui:** add vault picker screen with filtering ([3e0fbc3](https://github.com/SentioLabs/envctl/commit/3e0fbc308fd0ffba25327113e0e0e11cbf3050d5))
+* **tui:** add viewport scrolling and Ctrl+U/D page navigation ([3991ad8](https://github.com/SentioLabs/envctl/commit/3991ad84678b51cb5e6fa8588c0f4357c2564c6b))
+* **tui:** add visual golden file tests for field editor ([20da82f](https://github.com/SentioLabs/envctl/commit/20da82ffb5d947d0bea48ae1039d3512b7c595b4))
+* **tui:** explicit save model — esc/q discard with confirmation ([9aa398b](https://github.com/SentioLabs/envctl/commit/9aa398bb8be049a795477e7f1692f743ed959120))
+
+
+### Bug Fixes
+
+* **onepassword:** filter out structural fields (notesPlain) from editor ([a85f75b](https://github.com/SentioLabs/envctl/commit/a85f75b1ba313834147470e2387955de455547e0))
+* **onepassword:** use section-qualified field refs for duplicate labels ([ae49484](https://github.com/SentioLabs/envctl/commit/ae49484df4d6fe9793a52507055dd6ec44d547cc))
+* remove duplicate vault.go from parallel merge ([dfdce47](https://github.com/SentioLabs/envctl/commit/dfdce4731709d701b29a3b78e3518a942a104fd6))
+* **secrets:** suppress nilnil lint in test mock ([a6402e8](https://github.com/SentioLabs/envctl/commit/a6402e8723a924f452f9f888477cf18973a2ace6))
+* **tui:** handle key input in error state to prevent hung process ([774940a](https://github.com/SentioLabs/envctl/commit/774940abeaa42a76c73cdf7cf6c3266c4f8629f1))
+* **tui:** prevent nil pointer panic in config-driven field editor ([6a17270](https://github.com/SentioLabs/envctl/commit/6a1727081e8ed82bd869361f3075d1d5bab39574))
+
 ## [0.4.0](https://github.com/SentioLabs/envctl/compare/v0.3.1...v0.4.0) (2026-03-06)
 
 
