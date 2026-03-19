@@ -46,6 +46,7 @@ type FieldEditor struct {
 	itemName      string
 	newFieldKey   string // temp storage during new-field flow
 	back          bool
+	saving        bool
 	quitting      bool
 }
 
@@ -104,6 +105,13 @@ func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		}
 	case tea.KeyEscape:
 		m.back = true
+	case tea.KeyEnter:
+		if len(m.fields) > 0 {
+			m.mode = modeEdit
+			m.input.SetValue(m.fields[m.cursor].Value)
+			m.input.CursorEnd()
+			return m, m.input.Focus()
+		}
 	case tea.KeyRunes:
 		switch string(keyMsg.Runes) {
 		case "e":
@@ -111,6 +119,10 @@ func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 			m.input.SetValue(m.fields[m.cursor].Value)
 			m.input.CursorEnd()
 			return m, m.input.Focus()
+		case "s":
+			if len(m.changes) > 0 {
+				m.saving = true
+			}
 		case "d":
 			m.mode = modeConfirmDelete
 			m.confirm = NewConfirm(fmt.Sprintf("Delete %s?", m.fields[m.cursor].Key))
@@ -339,9 +351,9 @@ func (m FieldEditor) View() string {
 	}
 
 	// Help
-	helpText := "e:edit  d:delete  r:rename  n:new  esc:back  q:quit"
+	helpText := "enter/e:edit  d:delete  r:rename  n:new  s:save  esc:back  q:quit"
 	if m.hasTypeEditor {
-		helpText = "e:edit  d:delete  r:rename  t:toggle type  n:new  esc:back  q:quit"
+		helpText = "enter/e:edit  d:delete  r:rename  t:toggle  n:new  s:save  esc:back  q:quit"
 	}
 	b.WriteString("\n")
 	b.WriteString(Help.Render(helpText))
@@ -357,6 +369,11 @@ func (m FieldEditor) PendingChanges() []PendingChange {
 // GoBack returns true if the user pressed Esc in normal mode.
 func (m FieldEditor) GoBack() bool {
 	return m.back
+}
+
+// Saving returns true if the user pressed s to apply pending changes.
+func (m FieldEditor) Saving() bool {
+	return m.saving
 }
 
 // Quitting returns true if the user pressed q.

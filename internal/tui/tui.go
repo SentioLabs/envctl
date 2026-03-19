@@ -362,6 +362,12 @@ func (m Model) updateFieldEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	if m.fieldEditor.Saving() {
+		changes := m.fieldEditor.PendingChanges()
+		m.loading = true
+		return m, m.saveChanges(changes)
+	}
+
 	if m.fieldEditor.GoBack() {
 		changes := m.fieldEditor.PendingChanges()
 		if len(changes) > 0 {
