@@ -510,12 +510,34 @@ func (m FieldEditor) View() string {
 		endIdx = len(visible)
 	}
 
+	// Compute column widths from visible fields
+	keyWidth := 0
+	valWidth := 0
+	for _, fi := range visible {
+		f := m.fields[fi]
+		if len(f.Key) > keyWidth {
+			keyWidth = len(f.Key)
+		}
+		v := f.Value
+		if f.Type == secrets.FieldConcealed {
+			v = concealedPlaceholder
+		}
+		if len(v) > valWidth {
+			valWidth = len(v)
+		}
+	}
+	// Cap value width to avoid absurdly wide lines
+	if valWidth > 50 {
+		valWidth = 50
+	}
+
 	// Scroll indicators
 	if m.viewportOffset > 0 {
 		b.WriteString(Subtitle.Render(fmt.Sprintf("  ↑ %d more above", m.viewportOffset)))
 		b.WriteString("\n")
 	}
 
+	rowFmt := fmt.Sprintf("%%s%%-%ds  %%-%ds  %%s", keyWidth, valWidth)
 	for vi := m.viewportOffset; vi < endIdx; vi++ {
 		fi := visible[vi]
 		f := m.fields[fi]
@@ -528,8 +550,12 @@ func (m FieldEditor) View() string {
 		if f.Type == secrets.FieldConcealed {
 			displayValue = concealedPlaceholder
 		}
+		// Truncate long values to keep columns aligned
+		if len(displayValue) > valWidth {
+			displayValue = displayValue[:valWidth-1] + "…"
+		}
 
-		line := fmt.Sprintf("%s%-20s  %-30s  %s", cursor, f.Key, displayValue, string(f.Type))
+		line := fmt.Sprintf(rowFmt, cursor, f.Key, displayValue, string(f.Type))
 		if vi == m.cursor {
 			b.WriteString(Selected.Render(line))
 		} else {

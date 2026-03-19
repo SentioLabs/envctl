@@ -1,11 +1,11 @@
 Fields: Test Item
 op://BACstack/Test Item
 
-  APP_SERVER_PORT       8080                            text
-> DATABASE_URL          postgres://localhost:5432/mydb  text
-  REDIS_HOST            localhost                       text
-  API_KEY               ********                        concealed
-  APP_ENV               local                           text
+  APP_SERVER_PORT  8080                            text
+> DATABASE_URL     postgres://localhost:5432/mydb  text
+  REDIS_HOST       localhost                       text
+  API_KEY          ********                        concealed
+  APP_ENV          local                           text
 
                      
   2 pending change(s)
