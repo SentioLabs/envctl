@@ -33,6 +33,13 @@ func TestEditCmdItemFlag(t *testing.T) {
 	assert.Equal(t, "", flag.DefValue)
 }
 
+func TestEditCmdBrowseFlag(t *testing.T) {
+	flag := editCmd.Flags().Lookup("browse")
+	require.NotNil(t, flag, "--browse flag should be registered")
+	assert.Equal(t, "bool", flag.Value.Type())
+	assert.Equal(t, "false", flag.DefValue)
+}
+
 func TestEditCmdItemWithoutVaultReturnsError(t *testing.T) {
 	// Reset flags after test
 	origVault := editVault
@@ -48,4 +55,12 @@ func TestEditCmdItemWithoutVaultReturnsError(t *testing.T) {
 	err := runEdit(editCmd, []string{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--item requires --vault")
+}
+
+func TestEditCmdHasAllExpectedFlags(t *testing.T) {
+	expectedFlags := []string{"vault", "item", "browse"}
+	for _, name := range expectedFlags {
+		flag := editCmd.Flags().Lookup(name)
+		assert.NotNil(t, flag, "flag --%s should be registered on edit command", name)
+	}
 }

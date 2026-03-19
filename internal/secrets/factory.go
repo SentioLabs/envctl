@@ -98,6 +98,25 @@ func NewEditor(ctx context.Context, opts EditorOptions) (Editor, error) {
 	}
 }
 
+// NewEditorForBackend creates an editor for a specific backend.
+// Used by the TUI's EditorFactory to create editors on demand for config-driven mode.
+func NewEditorForBackend(ctx context.Context, cfg *config.Config, backend string) (Editor, error) {
+	switch backend {
+	case config.Backend1Pass:
+		opCfg := config.OnePassConfig{}
+		if cfg != nil {
+			opCfg = cfg.ResolveOnePassConfig(nil)
+		}
+		return newOnePasswordEditor(opCfg)
+	default:
+		awsCfg := config.AWSConfig{}
+		if cfg != nil {
+			awsCfg = cfg.ResolveAWSConfig(nil)
+		}
+		return newAWSEditor(ctx, awsCfg)
+	}
+}
+
 // newAWSEditor creates an AWS editor that adapts the aws.AWSEditor
 // to the secrets.Editor interface.
 func newAWSEditor(ctx context.Context, awsCfg config.AWSConfig) (Editor, error) {
