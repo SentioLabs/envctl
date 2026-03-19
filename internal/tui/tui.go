@@ -355,10 +355,6 @@ func (m Model) updateFieldEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.fieldEditor, cmd = m.fieldEditor.Update(msg)
 
 	if m.fieldEditor.Quitting() {
-		changes := m.fieldEditor.PendingChanges()
-		if len(changes) > 0 {
-			return m, m.saveChanges(changes)
-		}
 		return m, tea.Quit
 	}
 
@@ -369,11 +365,6 @@ func (m Model) updateFieldEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.fieldEditor.GoBack() {
-		changes := m.fieldEditor.PendingChanges()
-		if len(changes) > 0 {
-			m.loading = true
-			return m, m.saveChanges(changes)
-		}
 		// Config mode: return to secret list
 		if m.configCtx != nil {
 			m.screen = screenSecretList

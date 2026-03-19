@@ -18,10 +18,19 @@ const (
 	modeNewFieldKey
 	modeNewFieldValue
 	modeConfirmDelete
+	modeConfirmDiscard
 )
 
 // concealedPlaceholder is displayed instead of the actual value for concealed fields.
 const concealedPlaceholder = "********"
+
+// pendingActionType tracks what to do after a discard confirmation.
+type pendingActionType int
+
+const (
+	actionBack pendingActionType = iota
+	actionQuit
+)
 
 // PendingChange represents a single pending modification to a field.
 type PendingChange struct {
@@ -44,7 +53,8 @@ type FieldEditor struct {
 	hasTypeEditor bool
 	itemRef       string
 	itemName      string
-	newFieldKey   string // temp storage during new-field flow
+	newFieldKey   string            // temp storage during new-field flow
+	pendingAction pendingActionType // what to do after discard confirm
 	back          bool
 	saving        bool
 	quitting      bool
@@ -83,6 +93,8 @@ func (m FieldEditor) Update(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		return m.updateNewFieldValue(msg)
 	case modeConfirmDelete:
 		return m.updateConfirmDelete(msg)
+	case modeConfirmDiscard:
+		return m.updateConfirmDiscard(msg)
 	default:
 		return m.updateNormal(msg)
 	}
@@ -104,6 +116,12 @@ func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 			m.cursor++
 		}
 	case tea.KeyEscape:
+		if len(m.changes) > 0 {
+			m.mode = modeConfirmDiscard
+			m.confirm = NewConfirm(fmt.Sprintf("Discard %d unsaved change(s)?", len(m.changes)))
+			m.pendingAction = actionBack
+			return m, nil
+		}
 		m.back = true
 	case tea.KeyEnter:
 		if len(m.fields) > 0 {
@@ -150,6 +168,12 @@ func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 			m.input.SetValue("")
 			return m, m.input.Focus()
 		case "q":
+			if len(m.changes) > 0 {
+				m.mode = modeConfirmDiscard
+				m.confirm = NewConfirm(fmt.Sprintf("Discard %d unsaved change(s)?", len(m.changes)))
+				m.pendingAction = actionQuit
+				return m, nil
+			}
 			m.quitting = true
 		}
 	}
@@ -293,6 +317,26 @@ func (m FieldEditor) updateConfirmDelete(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	return m, cmd
 }
 
+func (m FieldEditor) updateConfirmDiscard(msg tea.Msg) (FieldEditor, tea.Cmd) {
+	var cmd tea.Cmd
+	m.confirm, cmd = m.confirm.Update(msg)
+
+	if m.confirm.Confirmed() {
+		m.changes = nil
+		m.mode = modeNormal
+		switch m.pendingAction {
+		case actionBack:
+			m.back = true
+		case actionQuit:
+			m.quitting = true
+		}
+	} else if m.confirm.Dismissed() {
+		m.mode = modeNormal
+	}
+
+	return m, cmd
+}
+
 // View renders the field editor screen.
 func (m FieldEditor) View() string {
 	var b strings.Builder
@@ -340,6 +384,8 @@ func (m FieldEditor) View() string {
 		b.WriteString(fmt.Sprintf("  Value for %s:\n", m.newFieldKey))
 		b.WriteString("  " + m.input.View() + "\n")
 	case modeConfirmDelete:
+		b.WriteString(m.confirm.View())
+	case modeConfirmDiscard:
 		b.WriteString(m.confirm.View())
 	}
 
