@@ -52,12 +52,12 @@ func (m *mockEditor) UpdateField(_ context.Context, _ string, _ secrets.Field) e
 	return nil
 }
 
-func (m *mockEditor) DeleteField(_ context.Context, _, _ string) error {
+func (m *mockEditor) DeleteField(_ context.Context, _ string, _ secrets.Field) error {
 	m.calls = append(m.calls, "DeleteField")
 	return nil
 }
 
-func (m *mockEditor) RenameField(_ context.Context, _, _, _ string) error {
+func (m *mockEditor) RenameField(_ context.Context, _ string, _ secrets.Field, _ string) error {
 	m.calls = append(m.calls, "RenameField")
 	return nil
 }
@@ -72,7 +72,7 @@ type mockFieldTypeEditor struct {
 	mockEditor
 }
 
-func (m *mockFieldTypeEditor) SetFieldType(_ context.Context, _, _ string, _ secrets.FieldType) error {
+func (m *mockFieldTypeEditor) SetFieldType(_ context.Context, _ string, _ secrets.Field, _ secrets.FieldType) error {
 	m.calls = append(m.calls, "SetFieldType")
 	return nil
 }

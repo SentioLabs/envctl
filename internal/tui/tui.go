@@ -462,12 +462,14 @@ func (m Model) saveChanges(changes []PendingChange) tea.Cmd {
 			case "update":
 				err = m.editor.UpdateField(ctx, ref, c.Field)
 			case "delete":
-				err = m.editor.DeleteField(ctx, ref, c.Field.Key)
+				err = m.editor.DeleteField(ctx, ref, c.Field)
 			case "rename":
-				err = m.editor.RenameField(ctx, ref, c.OldKey, c.Field.Key)
+				oldField := c.Field
+				oldField.Key = c.OldKey
+				err = m.editor.RenameField(ctx, ref, oldField, c.Field.Key)
 			case "set_type":
 				if fte, ok := m.editor.(secrets.FieldTypeEditor); ok {
-					err = fte.SetFieldType(ctx, ref, c.Field.Key, c.NewType)
+					err = fte.SetFieldType(ctx, ref, c.Field, c.NewType)
 				}
 			}
 			if err != nil {

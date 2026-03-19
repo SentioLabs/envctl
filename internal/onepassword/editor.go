@@ -164,7 +164,9 @@ func mapFieldType(opType string) FieldType {
 }
 
 // UpdateField updates a single field on a 1Password item.
-func (e *OPEditor) UpdateField(ctx context.Context, ref string, key, value string) error {
+// When section is non-empty, uses "section.key=value" syntax to disambiguate
+// duplicate field labels across sections.
+func (e *OPEditor) UpdateField(ctx context.Context, ref string, key, value, section string) error {
 	parsedRef, err := ParseReference(ref)
 	if err != nil {
 		return fmt.Errorf("invalid reference %q: %w", ref, err)
@@ -173,7 +175,11 @@ func (e *OPEditor) UpdateField(ctx context.Context, ref string, key, value strin
 		parsedRef.Vault = e.defaultVault
 	}
 
-	assignment := fmt.Sprintf("%s=%s", key, value)
+	fieldRef := key
+	if section != "" {
+		fieldRef = section + "." + key
+	}
+	assignment := fmt.Sprintf("%s=%s", fieldRef, value)
 	args := []string{"item", "edit", parsedRef.Item, assignment, "--vault", parsedRef.Vault}
 	if e.account != "" {
 		args = append(args, "--account", e.account)
@@ -184,7 +190,8 @@ func (e *OPEditor) UpdateField(ctx context.Context, ref string, key, value strin
 }
 
 // DeleteField removes a field from a 1Password item.
-func (e *OPEditor) DeleteField(ctx context.Context, ref, key string) error {
+// When section is non-empty, uses "section.key[delete]" to disambiguate.
+func (e *OPEditor) DeleteField(ctx context.Context, ref, key, section string) error {
 	parsedRef, err := ParseReference(ref)
 	if err != nil {
 		return fmt.Errorf("invalid reference %q: %w", ref, err)
@@ -193,7 +200,11 @@ func (e *OPEditor) DeleteField(ctx context.Context, ref, key string) error {
 		parsedRef.Vault = e.defaultVault
 	}
 
-	deleteExpr := key + "[delete]"
+	fieldRef := key
+	if section != "" {
+		fieldRef = section + "." + key
+	}
+	deleteExpr := fieldRef + "[delete]"
 	args := []string{"item", "edit", parsedRef.Item, deleteExpr, "--vault", parsedRef.Vault}
 	if e.account != "" {
 		args = append(args, "--account", e.account)
@@ -204,8 +215,9 @@ func (e *OPEditor) DeleteField(ctx context.Context, ref, key string) error {
 }
 
 // RenameField renames a field by deleting the old key and creating a new one.
+// When section is non-empty, uses section-qualified references.
 // This is a non-atomic operation.
-func (e *OPEditor) RenameField(ctx context.Context, ref, oldKey, newKey string) error {
+func (e *OPEditor) RenameField(ctx context.Context, ref, oldKey, newKey, section string) error {
 	// Get the current value of the field
 	fields, err := e.GetEditorFields(ctx, ref)
 	if err != nil {
@@ -226,12 +238,12 @@ func (e *OPEditor) RenameField(ctx context.Context, ref, oldKey, newKey string) 
 	}
 
 	// Delete the old field
-	if err := e.DeleteField(ctx, ref, oldKey); err != nil {
+	if err := e.DeleteField(ctx, ref, oldKey, section); err != nil {
 		return fmt.Errorf("failed to delete old field %q: %w", oldKey, err)
 	}
 
 	// Create the new field with the same value
-	if err := e.UpdateField(ctx, ref, newKey, value); err != nil {
+	if err := e.UpdateField(ctx, ref, newKey, value, section); err != nil {
 		return fmt.Errorf("failed to create new field %q: %w", newKey, err)
 	}
 
@@ -253,7 +265,8 @@ func (e *OPEditor) CreateEditorItem(ctx context.Context, vault, name string, fie
 }
 
 // SetEditorFieldType changes a field's type between concealed and text.
-func (e *OPEditor) SetEditorFieldType(ctx context.Context, ref, key string, ft FieldType) error {
+// When section is non-empty, uses section-qualified references.
+func (e *OPEditor) SetEditorFieldType(ctx context.Context, ref, key, section string, ft FieldType) error {
 	// Get current value
 	fields, err := e.GetEditorFields(ctx, ref)
 	if err != nil {
@@ -287,7 +300,11 @@ func (e *OPEditor) SetEditorFieldType(ctx context.Context, ref, key string, ft F
 		parsedRef.Vault = e.defaultVault
 	}
 
-	typeExpr := fmt.Sprintf("%s[%s]=%s", key, opType, value)
+	fieldRef := key
+	if section != "" {
+		fieldRef = section + "." + key
+	}
+	typeExpr := fmt.Sprintf("%s[%s]=%s", fieldRef, opType, value)
 	args := []string{"item", "edit", parsedRef.Item, typeExpr, "--vault", parsedRef.Vault}
 	if e.account != "" {
 		args = append(args, "--account", e.account)

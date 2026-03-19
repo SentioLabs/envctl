@@ -202,13 +202,13 @@ func (a *awsEditorAdapter) UpdateField(ctx context.Context, ref string, field Fi
 }
 
 // DeleteField delegates field deletion to the AWS editor.
-func (a *awsEditorAdapter) DeleteField(ctx context.Context, ref, key string) error {
-	return a.awsEditor.DeleteEditorField(ctx, ref, key)
+func (a *awsEditorAdapter) DeleteField(ctx context.Context, ref string, field Field) error {
+	return a.awsEditor.DeleteEditorField(ctx, ref, field.Key)
 }
 
 // RenameField delegates field rename to the AWS editor.
-func (a *awsEditorAdapter) RenameField(ctx context.Context, ref, oldKey, newKey string) error {
-	return a.awsEditor.RenameEditorField(ctx, ref, oldKey, newKey)
+func (a *awsEditorAdapter) RenameField(ctx context.Context, ref string, field Field, newKey string) error {
+	return a.awsEditor.RenameEditorField(ctx, ref, field.Key, newKey)
 }
 
 // CreateItem converts secrets.Field to aws.EditorFieldPair and delegates item creation.
@@ -301,17 +301,17 @@ func (a *opEditorAdapter) GetFields(ctx context.Context, ref string) ([]Field, e
 
 // UpdateField delegates field update to the 1Password editor.
 func (a *opEditorAdapter) UpdateField(ctx context.Context, ref string, field Field) error {
-	return a.opEditor.UpdateField(ctx, ref, field.Key, field.Value)
+	return a.opEditor.UpdateField(ctx, ref, field.Key, field.Value, field.Section)
 }
 
 // DeleteField delegates field deletion to the 1Password editor.
-func (a *opEditorAdapter) DeleteField(ctx context.Context, ref, key string) error {
-	return a.opEditor.DeleteField(ctx, ref, key)
+func (a *opEditorAdapter) DeleteField(ctx context.Context, ref string, field Field) error {
+	return a.opEditor.DeleteField(ctx, ref, field.Key, field.Section)
 }
 
 // RenameField delegates field rename to the 1Password editor.
-func (a *opEditorAdapter) RenameField(ctx context.Context, ref, oldKey, newKey string) error {
-	return a.opEditor.RenameField(ctx, ref, oldKey, newKey)
+func (a *opEditorAdapter) RenameField(ctx context.Context, ref string, field Field, newKey string) error {
+	return a.opEditor.RenameField(ctx, ref, field.Key, newKey, field.Section)
 }
 
 // CreateItem converts secrets.Field to onepassword.FieldPair and delegates item creation.
@@ -324,6 +324,6 @@ func (a *opEditorAdapter) CreateItem(ctx context.Context, vault, name string, fi
 }
 
 // SetFieldType delegates field type change to the 1Password editor.
-func (a *opEditorAdapter) SetFieldType(ctx context.Context, ref, key string, ft FieldType) error {
-	return a.opEditor.SetEditorFieldType(ctx, ref, key, onepassword.FieldType(ft))
+func (a *opEditorAdapter) SetFieldType(ctx context.Context, ref string, field Field, ft FieldType) error {
+	return a.opEditor.SetEditorFieldType(ctx, ref, field.Key, field.Section, onepassword.FieldType(ft))
 }

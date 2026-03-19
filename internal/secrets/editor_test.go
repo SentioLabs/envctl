@@ -25,8 +25,10 @@ func (m *mockEditor) GetFields(_ context.Context, _ string) ([]secrets.Field, er
 	return nil, nil
 }
 func (m *mockEditor) UpdateField(_ context.Context, _ string, _ secrets.Field) error { return nil }
-func (m *mockEditor) DeleteField(_ context.Context, _, _ string) error               { return nil }
-func (m *mockEditor) RenameField(_ context.Context, _, _, _ string) error            { return nil }
+func (m *mockEditor) DeleteField(_ context.Context, _ string, _ secrets.Field) error { return nil }
+func (m *mockEditor) RenameField(_ context.Context, _ string, _ secrets.Field, _ string) error {
+	return nil
+}
 func (m *mockEditor) CreateItem(_ context.Context, _ string, _ string, _ []secrets.Field) error {
 	return nil
 }
@@ -36,7 +38,7 @@ type mockFieldTypeEditor struct {
 	mockEditor
 }
 
-func (m *mockFieldTypeEditor) SetFieldType(_ context.Context, _, _ string, _ secrets.FieldType) error {
+func (m *mockFieldTypeEditor) SetFieldType(_ context.Context, _ string, _ secrets.Field, _ secrets.FieldType) error {
 	return nil
 }
 

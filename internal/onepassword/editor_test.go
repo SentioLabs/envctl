@@ -162,7 +162,7 @@ func TestUpdateField(t *testing.T) {
 	m := &mockRunner{output: []byte("{}")}
 	editor := newTestEditor(m)
 
-	err := editor.UpdateField(context.Background(), "TestVault/myitem", "DB_HOST", "localhost")
+	err := editor.UpdateField(context.Background(), "TestVault/myitem", "DB_HOST", "localhost", "")
 	require.NoError(t, err)
 
 	require.Len(t, m.calls, 1)
@@ -178,7 +178,7 @@ func TestDeleteField(t *testing.T) {
 	m := &mockRunner{output: []byte("{}")}
 	editor := newTestEditor(m)
 
-	err := editor.DeleteField(context.Background(), "TestVault/myitem", "OLD_KEY")
+	err := editor.DeleteField(context.Background(), "TestVault/myitem", "OLD_KEY", "")
 	require.NoError(t, err)
 
 	require.Len(t, m.calls, 1)
@@ -213,7 +213,7 @@ func TestRenameField(t *testing.T) {
 		}
 	}
 
-	err = editor.RenameField(context.Background(), "TestVault/myitem", "old_key", "new_key")
+	err = editor.RenameField(context.Background(), "TestVault/myitem", "old_key", "new_key", "")
 	require.NoError(t, err)
 	assert.Equal(t, 3, callCount, "expected 3 op calls: getItem, delete, update")
 }
@@ -232,7 +232,7 @@ func TestRenameField_KeyNotFound(t *testing.T) {
 	m := &mockRunner{output: itemData}
 	editor := newTestEditor(m)
 
-	err = editor.RenameField(context.Background(), "TestVault/myitem", "nonexistent", "new_key")
+	err = editor.RenameField(context.Background(), "TestVault/myitem", "nonexistent", "new_key", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nonexistent")
 }
@@ -287,7 +287,7 @@ func TestSetFieldType_Concealed(t *testing.T) {
 		return []byte("{}"), nil
 	}
 
-	err = editor.SetEditorFieldType(context.Background(), "TestVault/myitem", "API_KEY", FieldConcealed)
+	err = editor.SetEditorFieldType(context.Background(), "TestVault/myitem", "API_KEY", "", FieldConcealed)
 	require.NoError(t, err)
 
 	require.Len(t, capturedCalls, 2)
@@ -321,7 +321,7 @@ func TestSetFieldType_Text(t *testing.T) {
 		return []byte("{}"), nil
 	}
 
-	err = editor.SetEditorFieldType(context.Background(), "TestVault/myitem", "API_KEY", FieldText)
+	err = editor.SetEditorFieldType(context.Background(), "TestVault/myitem", "API_KEY", "", FieldText)
 	require.NoError(t, err)
 
 	require.Len(t, capturedCalls, 2)
@@ -343,7 +343,7 @@ func TestSetFieldType_KeyNotFound(t *testing.T) {
 	m := &mockRunner{output: itemData}
 	editor := newTestEditor(m)
 
-	err = editor.SetEditorFieldType(context.Background(), "TestVault/myitem", "MISSING", FieldConcealed)
+	err = editor.SetEditorFieldType(context.Background(), "TestVault/myitem", "MISSING", "", FieldConcealed)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "MISSING")
 }
@@ -369,7 +369,7 @@ func TestUpdateField_RefParsing(t *testing.T) {
 	m := &mockRunner{output: []byte("{}")}
 	editor := newTestEditor(m)
 
-	err := editor.UpdateField(context.Background(), "myitem", "KEY", "val")
+	err := editor.UpdateField(context.Background(), "myitem", "KEY", "val", "")
 	require.NoError(t, err)
 
 	require.Len(t, m.calls, 1)
