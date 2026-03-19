@@ -2,6 +2,20 @@
 
 All notable changes to envctl will be documented in this file.
 
+## [0.6.0](https://github.com/SentioLabs/envctl/compare/v0.5.0...v0.6.0) (2026-03-19)
+
+
+### Features
+
+* **tui:** add v to reveal/conceal secret values in field editor ([49e7709](https://github.com/SentioLabs/envctl/commit/49e7709bbab588f23e303ed2e1f8d38a952fc2e8))
+
+
+### Bug Fixes
+
+* **onepassword:** batch field changes into single op item edit call ([5ef5c6e](https://github.com/SentioLabs/envctl/commit/5ef5c6e4dd357fe3e9fa8afe62a78fbe82f1de0d))
+* **onepassword:** use field ID to disambiguate duplicate labels ([a898818](https://github.com/SentioLabs/envctl/commit/a8988184351b82455249067eb66d7935bd957ccf))
+* **tui:** dynamically align field editor columns based on content width ([4a41c3a](https://github.com/SentioLabs/envctl/commit/4a41c3a35fe82b14c5a6f4cf33f9c16ec9f4f68c))
+
 ## [0.5.0](https://github.com/SentioLabs/envctl/compare/v0.4.0...v0.5.0) (2026-03-19)
 
 
