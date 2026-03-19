@@ -174,6 +174,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.screen == screenFieldEditor {
+			m.fieldEditor.SetHeight(m.height)
+		}
 		return m, nil
 
 	case vaultsLoadedMsg:
@@ -190,6 +193,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		_, hasTypeEditor := m.editor.(secrets.FieldTypeEditor)
 		m.fieldEditor = NewFieldEditor(msg.itemRef, msg.itemName, msg.fields, hasTypeEditor)
+		m.fieldEditor.SetHeight(m.height)
 		return m, nil
 
 	case saveCompleteMsg:

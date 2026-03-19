@@ -58,6 +58,8 @@ type FieldEditor struct {
 	pendingAction   pendingActionType // what to do after discard confirm
 	filterText      string            // current filter query
 	filteredIndices []int             // indices into fields that match filter
+	height          int              // terminal height for viewport scrolling
+	viewportOffset  int              // first visible row index
 	back            bool
 	saving        bool
 	quitting      bool
@@ -118,6 +120,37 @@ func (m FieldEditor) realIndex() int {
 	return visible[m.cursor]
 }
 
+// SetHeight sets the terminal height for viewport scrolling.
+func (m *FieldEditor) SetHeight(h int) {
+	m.height = h
+}
+
+// fieldCapacity returns how many field rows fit in the viewport.
+// Accounts for chrome: title(1) + subtitle(1) + filter(1) + blank(1) +
+// mode UI(~3) + status(2) + help(2) = ~11 lines of chrome.
+func (m FieldEditor) fieldCapacity() int {
+	chrome := 11
+	if m.filterText != "" && m.mode != modeFilter {
+		chrome++ // active filter indicator
+	}
+	cap := m.height - chrome
+	if cap < 3 {
+		cap = 3
+	}
+	return cap
+}
+
+// ensureCursorVisible adjusts viewportOffset so the cursor is within the visible window.
+func (m *FieldEditor) ensureCursorVisible() {
+	cap := m.fieldCapacity()
+	if m.cursor < m.viewportOffset {
+		m.viewportOffset = m.cursor
+	}
+	if m.cursor >= m.viewportOffset+cap {
+		m.viewportOffset = m.cursor - cap + 1
+	}
+}
+
 // Init returns nil; no initial command is needed.
 func (m FieldEditor) Init() tea.Cmd {
 	return nil
@@ -159,10 +192,28 @@ func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		if m.cursor > 0 {
 			m.cursor--
 		}
+		m.ensureCursorVisible()
 	case tea.KeyDown:
 		if m.cursor < len(visible)-1 {
 			m.cursor++
 		}
+		m.ensureCursorVisible()
+	case tea.KeyCtrlU:
+		// Half-page up
+		jump := m.fieldCapacity() / 2
+		m.cursor -= jump
+		if m.cursor < 0 {
+			m.cursor = 0
+		}
+		m.ensureCursorVisible()
+	case tea.KeyCtrlD:
+		// Half-page down
+		jump := m.fieldCapacity() / 2
+		m.cursor += jump
+		if m.cursor >= len(visible) {
+			m.cursor = len(visible) - 1
+		}
+		m.ensureCursorVisible()
 	case tea.KeyEscape:
 		// If filtering, clear filter first
 		if m.filterText != "" {
@@ -451,9 +502,22 @@ func (m FieldEditor) View() string {
 	}
 	b.WriteString("\n")
 
-	// Render field table (filtered)
+	// Render field table (filtered + viewport)
 	visible := m.visibleFields()
-	for vi, fi := range visible {
+	cap := m.fieldCapacity()
+	endIdx := m.viewportOffset + cap
+	if endIdx > len(visible) {
+		endIdx = len(visible)
+	}
+
+	// Scroll indicators
+	if m.viewportOffset > 0 {
+		b.WriteString(Subtitle.Render(fmt.Sprintf("  ↑ %d more above", m.viewportOffset)))
+		b.WriteString("\n")
+	}
+
+	for vi := m.viewportOffset; vi < endIdx; vi++ {
+		fi := visible[vi]
 		f := m.fields[fi]
 		cursor := "  "
 		if vi == m.cursor {
@@ -471,6 +535,12 @@ func (m FieldEditor) View() string {
 		} else {
 			b.WriteString(line)
 		}
+		b.WriteString("\n")
+	}
+
+	// Scroll indicators
+	if endIdx < len(visible) {
+		b.WriteString(Subtitle.Render(fmt.Sprintf("  ↓ %d more below", len(visible)-endIdx)))
 		b.WriteString("\n")
 	}
 
