@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -96,6 +97,20 @@ func newMockEditor() *mockEditor {
 func newMockFieldTypeEditor() *mockFieldTypeEditor {
 	me := newMockEditor()
 	return &mockFieldTypeEditor{mockEditor: *me}
+}
+
+// mockEditorFactory tracks EditorFactory calls and returns pre-configured editors.
+type mockEditorFactory struct {
+	editors map[string]*mockEditor // backend -> editor
+	calls   []string
+}
+
+func (f *mockEditorFactory) create(_ context.Context, backend string) (secrets.Editor, error) {
+	f.calls = append(f.calls, backend)
+	if e, ok := f.editors[backend]; ok {
+		return e, nil
+	}
+	return nil, fmt.Errorf("unknown backend: %s", backend)
 }
 
 // executeCmd runs a tea.Cmd synchronously and returns the resulting message.
@@ -433,4 +448,293 @@ func TestSaveComplete_ReloadsFields(t *testing.T) {
 	msg := executeCmd(cmd)
 	_, ok := msg.(fieldsLoadedMsg)
 	assert.True(t, ok)
+}
+
+// --- Config mode tests ---
+
+func newTestConfigContext() *ConfigContext {
+	return &ConfigContext{
+		Apps: []string{"core-api", "web-app"},
+		Envs: map[string][]string{
+			"core-api": {"local", "staging"},
+			"web-app":  {"local", "production"},
+		},
+		Sources: map[string][]Source{
+			"core-api/local":      {{Name: "core-api-local-secrets", Backend: "1pass"}},
+			"core-api/staging":    {{Name: "core-api-staging-secrets", Backend: "aws"}},
+			"web-app/local":       {{Name: "web-app-local-secrets", Backend: "1pass"}},
+			"web-app/production":  {{Name: "web-app-prod-secrets", Backend: "aws"}},
+		},
+		DefaultApp: "",
+		DefaultEnv: "",
+	}
+}
+
+func newTestEditorFactory() *mockEditorFactory {
+	return &mockEditorFactory{
+		editors: map[string]*mockEditor{
+			"1pass": newMockEditor(),
+			"aws":   newMockEditor(),
+		},
+	}
+}
+
+func TestNew_ConfigMode_StartsAtAppPicker(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+	})
+
+	assert.Equal(t, screenAppPicker, m.screen)
+	assert.False(t, m.loading, "app picker does not need async loading")
+	assert.NotNil(t, m.configCtx)
+}
+
+func TestNew_ConfigMode_SingleApp_AutoSkipsToEnvPicker(t *testing.T) {
+	cfg := &ConfigContext{
+		Apps: []string{"only-app"},
+		Envs: map[string][]string{
+			"only-app": {"local", "staging"},
+		},
+		Sources: map[string][]Source{
+			"only-app/local":   {{Name: "secrets", Backend: "aws"}},
+			"only-app/staging": {{Name: "secrets", Backend: "aws"}},
+		},
+	}
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+	})
+
+	assert.Equal(t, screenEnvPicker, m.screen)
+	assert.Equal(t, "only-app", m.currentApp)
+	assert.False(t, m.loading)
+}
+
+func TestNew_ConfigMode_AppFlag_SkipsAppPicker(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+		App:           "core-api",
+	})
+
+	assert.Equal(t, screenEnvPicker, m.screen)
+	assert.Equal(t, "core-api", m.currentApp)
+	assert.False(t, m.loading)
+}
+
+func TestNew_ConfigMode_AppAndEnvFlags_SkipToSecretList(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+		App:           "core-api",
+		Env:           "local",
+	})
+
+	assert.Equal(t, screenSecretList, m.screen)
+	assert.Equal(t, "core-api", m.currentApp)
+	assert.Equal(t, "local", m.currentEnv)
+	assert.False(t, m.loading)
+}
+
+func TestConfigMode_SelectApp_TransitionsToEnvPicker(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+	})
+
+	// Simulate pressing Enter to select the first app
+	model, _ := updateModel(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	assert.Equal(t, screenEnvPicker, model.screen)
+	assert.NotEmpty(t, model.currentApp)
+}
+
+func TestConfigMode_SelectEnv_TransitionsToSecretList(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+		App:           "core-api",
+	})
+
+	// At env picker, press Enter to select first env
+	model, _ := updateModel(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	assert.Equal(t, screenSecretList, model.screen)
+	assert.NotEmpty(t, model.currentEnv)
+}
+
+func TestConfigMode_SelectSource_CallsEditorFactory(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+		App:           "core-api",
+		Env:           "local",
+	})
+
+	// At secret list, press Enter to select the source
+	model, cmd := updateModel(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	assert.True(t, model.loading)
+	require.NotNil(t, cmd)
+
+	// Execute the command — should call EditorFactory
+	msg := executeCmd(cmd)
+	created, ok := msg.(editorCreatedMsg)
+	require.True(t, ok)
+	assert.NotNil(t, created.editor)
+	assert.Equal(t, "core-api-local-secrets", created.source.Name)
+	assert.Contains(t, factory.calls, "1pass")
+
+	// Feed the editorCreatedMsg back to transition to field editor
+	model, cmd = updateModel(t, model, created)
+	assert.Equal(t, screenFieldEditor, model.screen)
+	assert.True(t, model.loading) // loading fields now
+	require.NotNil(t, cmd)
+
+	// The cmd should load fields
+	msg = executeCmd(cmd)
+	_, ok = msg.(fieldsLoadedMsg)
+	assert.True(t, ok)
+}
+
+func TestConfigMode_BrowseMode_SwitchesToVaultPicker(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+		App:           "core-api",
+		Env:           "local",
+	})
+
+	// At secret list, press 'b' for browse mode
+	model, cmd := updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+
+	assert.True(t, model.loading)
+	require.NotNil(t, cmd)
+
+	// Execute the command — should call EditorFactory for browse
+	msg := executeCmd(cmd)
+	created, ok := msg.(editorCreatedMsg)
+	require.True(t, ok)
+	assert.Equal(t, "__browse__", created.source.Name)
+
+	// Feed the editorCreatedMsg — should transition to vault picker
+	model, cmd = updateModel(t, model, created)
+	assert.Equal(t, screenVaultPicker, model.screen)
+	assert.True(t, model.loading) // loading vaults now
+	require.NotNil(t, cmd)
+
+	// The cmd should load vaults
+	msg = executeCmd(cmd)
+	_, ok = msg.(vaultsLoadedMsg)
+	assert.True(t, ok)
+}
+
+func TestBrowseMode_WithoutConfigContext_UsesExistingFlow(t *testing.T) {
+	editor := newMockEditor()
+	m := New(Options{Editor: editor})
+
+	// Should start at vault picker in browse mode
+	assert.Equal(t, screenVaultPicker, m.screen)
+	assert.Nil(t, m.configCtx)
+
+	// Init should load vaults
+	cmd := m.Init()
+	require.NotNil(t, cmd)
+	msg := executeCmd(cmd)
+	_, ok := msg.(vaultsLoadedMsg)
+	assert.True(t, ok)
+}
+
+func TestInit_ConfigMode_AppPicker_ReturnsNil(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+	})
+
+	cmd := m.Init()
+	assert.Nil(t, cmd, "app picker needs no async init")
+}
+
+func TestInit_ConfigMode_EnvPicker_ReturnsNil(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+		App:           "core-api",
+	})
+
+	cmd := m.Init()
+	assert.Nil(t, cmd, "env picker needs no async init")
+}
+
+func TestInit_ConfigMode_SecretList_ReturnsNil(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+		App:           "core-api",
+		Env:           "local",
+	})
+
+	cmd := m.Init()
+	assert.Nil(t, cmd, "secret list needs no async init")
+}
+
+func TestView_ConfigMode_AppPicker(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+	})
+
+	view := m.View()
+	assert.Contains(t, view, "application")
+}
+
+func TestView_ConfigMode_EnvPicker(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+		App:           "core-api",
+	})
+
+	view := m.View()
+	assert.Contains(t, view, "environment")
+}
+
+func TestView_ConfigMode_SecretList(t *testing.T) {
+	cfg := newTestConfigContext()
+	factory := newTestEditorFactory()
+	m := New(Options{
+		Config:        cfg,
+		EditorFactory: factory.create,
+		App:           "core-api",
+		Env:           "local",
+	})
+
+	view := m.View()
+	assert.Contains(t, view, "Secrets")
 }

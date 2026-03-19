@@ -11,35 +11,49 @@ import (
 type screen int
 
 const (
-	screenVaultPicker screen = iota
+	screenAppPicker screen = iota
+	screenEnvPicker
+	screenSecretList
+	screenVaultPicker
 	screenItemList
 	screenFieldEditor
 )
 
 // Options configures the root TUI model.
 type Options struct {
-	Editor secrets.Editor
-	Vault  string // pre-select vault (skip picker)
-	Item   string // pre-select item (skip to field editor)
+	Editor        secrets.Editor
+	EditorFactory func(ctx context.Context, backend string) (secrets.Editor, error)
+	Config        *ConfigContext
+	Vault         string // pre-select vault (skip picker)
+	Item          string // pre-select item (skip to field editor)
+	App           string // pre-select app (skip app picker)
+	Env           string // pre-select env (skip env picker)
 }
 
 // Model is the root Bubble Tea model that orchestrates screen transitions
 // between VaultPicker, ItemList, and FieldEditor, and calls secrets.Editor
 // methods for loading data and applying changes.
 type Model struct {
-	editor       secrets.Editor
-	screen       screen
-	vaultPicker  VaultPicker
-	itemList     ItemList
-	fieldEditor  FieldEditor
-	currentVault *secrets.Vault
-	currentItem  *secrets.Item
-	loading      bool
-	err          error
-	width        int
-	height       int
-	presetVault  string
-	presetItem   string
+	editor        secrets.Editor
+	editorFactory func(ctx context.Context, backend string) (secrets.Editor, error)
+	configCtx     *ConfigContext
+	screen        screen
+	vaultPicker   VaultPicker
+	itemList      ItemList
+	fieldEditor   FieldEditor
+	appPicker     AppPicker
+	envPicker     EnvPicker
+	secretList    SecretList
+	currentVault  *secrets.Vault
+	currentItem   *secrets.Item
+	currentApp    string
+	currentEnv    string
+	loading       bool
+	err           error
+	width         int
+	height        int
+	presetVault   string
+	presetItem    string
 }
 
 // Message types for async operations.
@@ -53,16 +67,66 @@ type fieldsLoadedMsg struct {
 type saveCompleteMsg struct{ err error }
 type errMsg struct{ err error }
 
-// New creates a new root Model from the given Options. If Vault is set, it
-// skips the vault picker. If both Vault and Item are set, it skips directly
-// to the field editor.
+// editorCreatedMsg is sent when an EditorFactory call completes.
+type editorCreatedMsg struct {
+	editor secrets.Editor
+	source Source
+}
+
+// New creates a new root Model from the given Options. If Config is set, uses
+// config-driven flow (app picker -> env picker -> secret list -> field editor).
+// If Config is nil, uses browse flow (vault picker -> item list -> field editor).
 func New(opts Options) Model {
 	m := Model{
-		editor:      opts.Editor,
-		loading:     true,
-		presetVault: opts.Vault,
-		presetItem:  opts.Item,
+		editor:        opts.Editor,
+		editorFactory: opts.EditorFactory,
+		configCtx:     opts.Config,
+		presetVault:   opts.Vault,
+		presetItem:    opts.Item,
 	}
+
+	if opts.Config != nil {
+		return newConfigMode(m, opts)
+	}
+
+	return newBrowseMode(m, opts)
+}
+
+// newConfigMode initializes the model for config-driven flow.
+func newConfigMode(m Model, opts Options) Model {
+	switch {
+	case opts.App != "" && opts.Env != "":
+		m.currentApp = opts.App
+		m.currentEnv = opts.Env
+		key := opts.App + "/" + opts.Env
+		sources := opts.Config.Sources[key]
+		appEnv := opts.App + " / " + opts.Env
+		m.secretList = NewSecretList(appEnv, sources)
+		m.screen = screenSecretList
+
+	case opts.App != "":
+		m.currentApp = opts.App
+		envs := opts.Config.Envs[opts.App]
+		m.envPicker = NewEnvPicker(opts.App, envs, opts.Config.DefaultEnv)
+		m.screen = screenEnvPicker
+
+	case len(opts.Config.Apps) == 1:
+		m.currentApp = opts.Config.Apps[0]
+		envs := opts.Config.Envs[m.currentApp]
+		m.envPicker = NewEnvPicker(m.currentApp, envs, opts.Config.DefaultEnv)
+		m.screen = screenEnvPicker
+
+	default:
+		m.appPicker = NewAppPicker(opts.Config.Apps, opts.Config.DefaultApp)
+		m.screen = screenAppPicker
+	}
+
+	return m
+}
+
+// newBrowseMode initializes the model for browse flow.
+func newBrowseMode(m Model, opts Options) Model {
+	m.loading = true
 
 	switch {
 	case opts.Vault != "" && opts.Item != "":
@@ -80,6 +144,8 @@ func New(opts Options) Model {
 // Init returns the command to load initial data for the starting screen.
 func (m Model) Init() tea.Cmd {
 	switch m.screen {
+	case screenAppPicker, screenEnvPicker, screenSecretList:
+		return nil
 	case screenVaultPicker:
 		return m.loadVaults()
 	case screenItemList:
@@ -124,6 +190,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, m.loadFields(m.currentItem.ID)
 
+	case editorCreatedMsg:
+		m.editor = msg.editor
+		if msg.source.Name == "__browse__" {
+			m.screen = screenVaultPicker
+			m.loading = true
+			return m, m.loadVaults()
+		}
+		// Config mode: load fields for the selected source
+		m.screen = screenFieldEditor
+		m.loading = true
+		return m, m.loadFields(msg.source.Name)
+
 	case errMsg:
 		m.err = msg.err
 		m.loading = false
@@ -135,12 +213,90 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.screen {
+	case screenAppPicker:
+		return m.updateAppPicker(msg)
+	case screenEnvPicker:
+		return m.updateEnvPicker(msg)
+	case screenSecretList:
+		return m.updateSecretList(msg)
 	case screenVaultPicker:
 		return m.updateVaultPicker(msg)
 	case screenItemList:
 		return m.updateItemList(msg)
 	case screenFieldEditor:
 		return m.updateFieldEditor(msg)
+	}
+
+	return m, nil
+}
+
+func (m Model) updateAppPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.appPicker, _ = m.appPicker.Update(msg)
+
+	if m.appPicker.Quitting() {
+		return m, tea.Quit
+	}
+
+	if app := m.appPicker.Selected(); app != "" {
+		m.currentApp = app
+		envs := m.configCtx.Envs[app]
+		m.envPicker = NewEnvPicker(app, envs, m.configCtx.DefaultEnv)
+		m.screen = screenEnvPicker
+	}
+
+	return m, nil
+}
+
+func (m Model) updateEnvPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.envPicker, _ = m.envPicker.Update(msg)
+
+	if m.envPicker.Quitting() {
+		return m, tea.Quit
+	}
+
+	if m.envPicker.GoBack() {
+		m.screen = screenAppPicker
+		m.appPicker = NewAppPicker(m.configCtx.Apps, m.configCtx.DefaultApp)
+		return m, nil
+	}
+
+	if env := m.envPicker.Selected(); env != "" {
+		m.currentEnv = env
+		key := m.currentApp + "/" + env
+		sources := m.configCtx.Sources[key]
+		appEnv := m.currentApp + " / " + env
+		if m.currentApp == "" {
+			appEnv = env
+		}
+		m.secretList = NewSecretList(appEnv, sources)
+		m.screen = screenSecretList
+	}
+
+	return m, nil
+}
+
+func (m Model) updateSecretList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.secretList, _ = m.secretList.Update(msg)
+
+	if m.secretList.Quitting() {
+		return m, tea.Quit
+	}
+
+	if m.secretList.GoBack() {
+		m.screen = screenEnvPicker
+		envs := m.configCtx.Envs[m.currentApp]
+		m.envPicker = NewEnvPicker(m.currentApp, envs, m.configCtx.DefaultEnv)
+		return m, nil
+	}
+
+	if m.secretList.BrowseMode() {
+		m.loading = true
+		return m, m.createEditorForBrowse()
+	}
+
+	if src := m.secretList.Selected(); src != nil {
+		m.loading = true
+		return m, m.createEditorForSource(*src)
 	}
 
 	return m, nil
@@ -225,6 +381,12 @@ func (m Model) View() string {
 	}
 
 	switch m.screen {
+	case screenAppPicker:
+		return m.appPicker.View()
+	case screenEnvPicker:
+		return m.envPicker.View()
+	case screenSecretList:
+		return m.secretList.View()
 	case screenVaultPicker:
 		return m.vaultPicker.View()
 	case screenItemList:
@@ -234,6 +396,37 @@ func (m Model) View() string {
 	}
 
 	return ""
+}
+
+// createEditorForSource returns a command that creates an editor for the given source.
+func (m Model) createEditorForSource(src Source) tea.Cmd {
+	return func() tea.Msg {
+		editor, err := m.editorFactory(context.Background(), src.Backend)
+		if err != nil {
+			return errMsg{err: err}
+		}
+		return editorCreatedMsg{editor: editor, source: src}
+	}
+}
+
+// createEditorForBrowse returns a command that creates an editor for browse mode.
+func (m Model) createEditorForBrowse() tea.Cmd {
+	return func() tea.Msg {
+		backend := "aws"
+		if m.configCtx != nil {
+			for _, sources := range m.configCtx.Sources {
+				if len(sources) > 0 {
+					backend = sources[0].Backend
+					break
+				}
+			}
+		}
+		editor, err := m.editorFactory(context.Background(), backend)
+		if err != nil {
+			return errMsg{err: err}
+		}
+		return editorCreatedMsg{editor: editor, source: Source{Name: "__browse__"}}
+	}
 }
 
 // saveChanges returns a command that applies pending changes via the editor.
