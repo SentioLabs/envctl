@@ -302,18 +302,21 @@ func (a *opEditorAdapter) GetFields(ctx context.Context, ref string) ([]Field, e
 }
 
 // UpdateField delegates field update to the 1Password editor.
+// Uses field ID when available to handle duplicate labels.
 func (a *opEditorAdapter) UpdateField(ctx context.Context, ref string, field Field) error {
-	return a.opEditor.UpdateField(ctx, ref, field.Key, field.Value, field.Section)
+	return a.opEditor.UpdateField(ctx, ref, opFieldRef(field), field.Value, "")
 }
 
 // DeleteField delegates field deletion to the 1Password editor.
+// Uses field ID when available to handle duplicate labels.
 func (a *opEditorAdapter) DeleteField(ctx context.Context, ref string, field Field) error {
-	return a.opEditor.DeleteField(ctx, ref, field.Key, field.Section)
+	return a.opEditor.DeleteField(ctx, ref, opFieldRef(field), "")
 }
 
 // RenameField delegates field rename to the 1Password editor.
+// Uses field ID for the old field to handle duplicate labels.
 func (a *opEditorAdapter) RenameField(ctx context.Context, ref string, field Field, newKey string) error {
-	return a.opEditor.RenameField(ctx, ref, field.Key, newKey, field.Section)
+	return a.opEditor.RenameField(ctx, ref, opFieldRef(field), newKey, "")
 }
 
 // CreateItem converts secrets.Field to onepassword.FieldPair and delegates item creation.
@@ -326,8 +329,21 @@ func (a *opEditorAdapter) CreateItem(ctx context.Context, vault, name string, fi
 }
 
 // SetFieldType delegates field type change to the 1Password editor.
+// Uses field ID when available to handle duplicate labels.
 func (a *opEditorAdapter) SetFieldType(ctx context.Context, ref string, field Field, ft FieldType) error {
-	return a.opEditor.SetEditorFieldType(ctx, ref, field.Key, field.Section, onepassword.FieldType(ft))
+	return a.opEditor.SetEditorFieldType(ctx, ref, opFieldRef(field), "", onepassword.FieldType(ft))
+}
+
+// opFieldRef returns the best identifier for an op item edit assignment.
+// Prefers field ID (guaranteed unique) over section.key over bare key.
+func opFieldRef(f Field) string {
+	if f.ID != "" {
+		return f.ID
+	}
+	if f.Section != "" {
+		return f.Section + "." + f.Key
+	}
+	return f.Key
 }
 
 // BatchSave batches all changes into minimal op item edit calls.
@@ -338,10 +354,7 @@ func (a *opEditorAdapter) BatchSave(ctx context.Context, ref string, changes []C
 	var typeAssignments []string
 
 	for _, c := range changes {
-		fieldRef := c.Field.Key
-		if c.Field.Section != "" {
-			fieldRef = c.Field.Section + "." + c.Field.Key
-		}
+		fieldRef := opFieldRef(c.Field)
 
 		switch c.Type {
 		case "update":
@@ -349,13 +362,17 @@ func (a *opEditorAdapter) BatchSave(ctx context.Context, ref string, changes []C
 		case "delete":
 			assignments = append(assignments, fieldRef+"[delete]")
 		case "rename":
-			oldRef := c.OldKey
-			if c.Field.Section != "" {
-				oldRef = c.Field.Section + "." + c.OldKey
-			}
+			oldField := c.Field
+			oldField.Key = c.OldKey
+			oldRef := opFieldRef(oldField)
 			// Rename = delete old + create new (in same batch)
 			assignments = append(assignments, oldRef+"[delete]")
-			assignments = append(assignments, fmt.Sprintf("%s=%s", fieldRef, c.Field.Value))
+			// New field won't have an ID yet, use key
+			newRef := c.Field.Key
+			if c.Field.Section != "" {
+				newRef = c.Field.Section + "." + c.Field.Key
+			}
+			assignments = append(assignments, fmt.Sprintf("%s=%s", newRef, c.Field.Value))
 		case "set_type":
 			opType := "text"
 			if c.NewType == FieldConcealed {
