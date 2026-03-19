@@ -1,0 +1,15 @@
+Fields: Test Item
+op://BACstack/Test Item
+
+> APP_SERVER_PORT       8080                            text
+  DATABASE_URL          ********                        concealed
+  REDIS_HOST            localhost                       text
+  API_KEY               ********                        concealed
+  APP_ENV               local                           text
+
+
+  Discard 1 unsaved change(s)? (y/n)
+                     
+  1 pending change(s)
+
+enter/e:edit  d:delete  r:rename  t:toggle  n:new  /:filter  s:save  esc:back  q:quit
