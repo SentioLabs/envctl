@@ -46,9 +46,10 @@ type Model struct {
 	secretList    SecretList
 	currentVault  *secrets.Vault
 	currentItem   *secrets.Item
-	currentApp    string
-	currentEnv    string
-	loading       bool
+	currentApp       string
+	currentEnv       string
+	currentSourceRef string // secret ref being edited in config mode
+	loading          bool
 	err           error
 	width         int
 	height        int
@@ -188,7 +189,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Reload fields after successful save.
 		m.loading = true
-		return m, m.loadFields(m.currentItem.ID)
+		ref := m.currentSourceRef
+		if ref == "" && m.currentItem != nil {
+			ref = m.currentItem.ID
+		}
+		return m, m.loadFields(ref)
 
 	case editorCreatedMsg:
 		m.editor = msg.editor
@@ -198,6 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.loadVaults()
 		}
 		// Config mode: load fields for the selected source
+		m.currentSourceRef = msg.source.Name
 		m.screen = screenFieldEditor
 		m.loading = true
 		return m, m.loadFields(msg.source.Name)
@@ -362,6 +368,20 @@ func (m Model) updateFieldEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, m.saveChanges(changes)
 		}
+		// Config mode: return to secret list
+		if m.configCtx != nil {
+			m.screen = screenSecretList
+			key := m.currentApp + "/" + m.currentEnv
+			sources := m.configCtx.Sources[key]
+			appEnv := m.currentApp + " / " + m.currentEnv
+			if m.currentApp == "" {
+				appEnv = m.currentEnv
+			}
+			m.secretList = NewSecretList(appEnv, sources)
+			m.currentSourceRef = ""
+			return m, nil
+		}
+		// Browse mode: return to item list
 		m.screen = screenItemList
 		m.loading = true
 		return m, m.loadItems(m.currentVault.ID)
@@ -431,20 +451,26 @@ func (m Model) createEditorForBrowse() tea.Cmd {
 
 // saveChanges returns a command that applies pending changes via the editor.
 func (m Model) saveChanges(changes []PendingChange) tea.Cmd {
+	// Determine the secret reference for API calls.
+	ref := m.currentSourceRef
+	if ref == "" && m.currentItem != nil {
+		ref = m.currentItem.ID
+	}
+
 	return func() tea.Msg {
 		ctx := context.Background()
 		for _, c := range changes {
 			var err error
 			switch c.Type {
 			case "update":
-				err = m.editor.UpdateField(ctx, m.currentItem.ID, c.Field)
+				err = m.editor.UpdateField(ctx, ref, c.Field)
 			case "delete":
-				err = m.editor.DeleteField(ctx, m.currentItem.ID, c.Field.Key)
+				err = m.editor.DeleteField(ctx, ref, c.Field.Key)
 			case "rename":
-				err = m.editor.RenameField(ctx, m.currentItem.ID, c.OldKey, c.Field.Key)
+				err = m.editor.RenameField(ctx, ref, c.OldKey, c.Field.Key)
 			case "set_type":
 				if fte, ok := m.editor.(secrets.FieldTypeEditor); ok {
-					err = fte.SetFieldType(ctx, m.currentItem.ID, c.Field.Key, c.NewType)
+					err = fte.SetFieldType(ctx, ref, c.Field.Key, c.NewType)
 				}
 			}
 			if err != nil {
