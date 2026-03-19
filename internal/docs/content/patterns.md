@@ -184,10 +184,10 @@ aws: blocks for region/profile overrides:
         region: us-west-2       # Prod account
         profile: prod
 
-Or use environment variables to switch credentials:
+Each environment's aws.profile is used automatically:
 
-  AWS_PROFILE=dev envctl -e dev run -- make dev
-  AWS_PROFILE=staging envctl -e staging run -- make dev
+  envctl -e dev run -- make dev         # uses 'dev' profile
+  envctl -e staging run -- make dev     # uses 'staging' profile
 
 Cross-Backend Sources
 ---------------------
