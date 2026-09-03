@@ -1,3 +1,4 @@
+//nolint:testpackage // Testing internal functions requires same package
 package tui
 
 import (
@@ -11,7 +12,7 @@ import (
 
 func testItems() []secrets.Item {
 	return []secrets.Item{
-		{ID: "item-1", Name: "database-creds"},
+		{ID: testItemID, Name: "database-creds"},
 		{ID: "item-2", Name: "api-keys"},
 		{ID: "item-3", Name: "tls-cert"},
 	}
@@ -45,7 +46,7 @@ func TestItemList_EnterSelectsItem(t *testing.T) {
 
 	require.NotNil(t, updated.Selected())
 	assert.Equal(t, "database-creds", updated.Selected().Name)
-	assert.Equal(t, "item-1", updated.Selected().ID)
+	assert.Equal(t, testItemID, updated.Selected().ID)
 }
 
 func TestItemList_PressN_EntersCreateMode(t *testing.T) {

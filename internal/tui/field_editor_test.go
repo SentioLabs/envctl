@@ -1,3 +1,4 @@
+//nolint:testpackage // Testing internal functions requires same package
 package tui
 
 import (
@@ -11,7 +12,7 @@ import (
 
 func testFields() []secrets.Field {
 	return []secrets.Field{
-		{ID: "1", Key: "DB_HOST", Value: "localhost", Type: secrets.FieldText},
+		{ID: "1", Key: testKeyDBHost, Value: testHostLocalhost, Type: secrets.FieldText},
 		{ID: "2", Key: "DB_PASS", Value: "s3cret", Type: secrets.FieldConcealed},
 		{ID: "3", Key: "API_KEY", Value: "abc123", Type: secrets.FieldText},
 	}
@@ -32,7 +33,7 @@ func TestNewFieldEditor_InitializesWithFieldsAndTitle(t *testing.T) {
 	assert.Equal(t, fields, editor.fields)
 	assert.Equal(t, "My Item", editor.itemName)
 	assert.Equal(t, "op://vault/item", editor.itemRef)
-	assert.Equal(t, true, editor.hasTypeEditor)
+	assert.True(t, editor.hasTypeEditor)
 	assert.Equal(t, 0, editor.cursor)
 	assert.Equal(t, modeNormal, editor.mode)
 	assert.Empty(t, editor.changes)
@@ -50,7 +51,7 @@ func TestFieldEditor_EditMode_EnterAndSave(t *testing.T) {
 	assert.Equal(t, modeEdit, editor.mode)
 
 	// The text input should have the current value
-	assert.Equal(t, "localhost", editor.input.Value())
+	assert.Equal(t, testHostLocalhost, editor.input.Value())
 
 	// Type a new value: clear and type "newhost"
 	editor.input.SetValue("newhost")
@@ -62,7 +63,7 @@ func TestFieldEditor_EditMode_EnterAndSave(t *testing.T) {
 	changes := editor.PendingChanges()
 	require.Len(t, changes, 1)
 	assert.Equal(t, "update", changes[0].Type)
-	assert.Equal(t, "DB_HOST", changes[0].Field.Key)
+	assert.Equal(t, testKeyDBHost, changes[0].Field.Key)
 	assert.Equal(t, "newhost", changes[0].Field.Value)
 }
 
@@ -82,7 +83,7 @@ func TestFieldEditor_EditMode_EscCancels(t *testing.T) {
 	assert.Equal(t, modeNormal, editor.mode)
 	assert.Empty(t, editor.PendingChanges())
 	// Original value should be unchanged
-	assert.Equal(t, "localhost", editor.fields[0].Value)
+	assert.Equal(t, testHostLocalhost, editor.fields[0].Value)
 }
 
 func TestFieldEditor_Delete_ShowsConfirmation(t *testing.T) {
@@ -94,7 +95,7 @@ func TestFieldEditor_Delete_ShowsConfirmation(t *testing.T) {
 	assert.Equal(t, modeConfirmDelete, editor.mode)
 
 	view := editor.View()
-	assert.Contains(t, view, "DB_HOST")
+	assert.Contains(t, view, testKeyDBHost)
 }
 
 func TestFieldEditor_Delete_ConfirmWithY(t *testing.T) {
@@ -109,7 +110,7 @@ func TestFieldEditor_Delete_ConfirmWithY(t *testing.T) {
 	changes := editor.PendingChanges()
 	require.Len(t, changes, 1)
 	assert.Equal(t, "delete", changes[0].Type)
-	assert.Equal(t, "DB_HOST", changes[0].Field.Key)
+	assert.Equal(t, testKeyDBHost, changes[0].Field.Key)
 }
 
 func TestFieldEditor_Delete_DismissWithN(t *testing.T) {
@@ -131,7 +132,7 @@ func TestFieldEditor_RenameMode(t *testing.T) {
 	// Press 'r' to rename
 	editor, _ = editor.Update(keyMsg("r"))
 	assert.Equal(t, modeRename, editor.mode)
-	assert.Equal(t, "DB_HOST", editor.input.Value())
+	assert.Equal(t, testKeyDBHost, editor.input.Value())
 
 	// Set new key name
 	editor.input.SetValue("DATABASE_HOST")
@@ -143,7 +144,7 @@ func TestFieldEditor_RenameMode(t *testing.T) {
 	changes := editor.PendingChanges()
 	require.Len(t, changes, 1)
 	assert.Equal(t, "rename", changes[0].Type)
-	assert.Equal(t, "DB_HOST", changes[0].OldKey)
+	assert.Equal(t, testKeyDBHost, changes[0].OldKey)
 	assert.Equal(t, "DATABASE_HOST", changes[0].Field.Key)
 }
 
@@ -157,7 +158,7 @@ func TestFieldEditor_ToggleType_WhenEnabled(t *testing.T) {
 	changes := editor.PendingChanges()
 	require.Len(t, changes, 1)
 	assert.Equal(t, "set_type", changes[0].Type)
-	assert.Equal(t, "DB_HOST", changes[0].Field.Key)
+	assert.Equal(t, testKeyDBHost, changes[0].Field.Key)
 	assert.Equal(t, secrets.FieldConcealed, changes[0].NewType)
 }
 
@@ -238,7 +239,7 @@ func TestFieldEditor_ConcealedFields_DisplayMasked(t *testing.T) {
 	// Should NOT contain the actual secret value in the view
 	assert.NotContains(t, view, "s3cret")
 	// DB_HOST is text — should show actual value
-	assert.Contains(t, view, "localhost")
+	assert.Contains(t, view, testHostLocalhost)
 }
 
 func TestFieldEditor_Navigation(t *testing.T) {

@@ -8,8 +8,18 @@ import (
 	"github.com/sentiolabs/envctl/internal/tui"
 )
 
+// Fixture values shared by the external TUI tests.
+const (
+	testAppCoreAPI   = "core-api"
+	testEnvDev       = "dev"
+	testEnvStaging   = "staging"
+	testVaultID      = "vault-1"
+	testBackendAWS   = "aws"
+	testBackend1Pass = "1pass"
+)
+
 func testApps() []string {
-	return []string{"core-api", "web-frontend", "worker"}
+	return []string{testAppCoreAPI, "web-frontend", "worker"}
 }
 
 func TestNewAppPicker(t *testing.T) {
@@ -49,8 +59,8 @@ func TestAppPickerUpdate(t *testing.T) {
 
 		updated, _ := picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
-		if updated.Selected() != "core-api" {
-			t.Errorf("expected selected app %q, got %q", "core-api", updated.Selected())
+		if updated.Selected() != testAppCoreAPI {
+			t.Errorf("expected selected app %q, got %q", testAppCoreAPI, updated.Selected())
 		}
 	})
 

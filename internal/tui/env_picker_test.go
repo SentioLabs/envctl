@@ -9,13 +9,13 @@ import (
 )
 
 func testEnvs() []string {
-	return []string{"dev", "staging", "production"}
+	return []string{testEnvDev, testEnvStaging, "production"}
 }
 
 func TestNewEnvPicker(t *testing.T) {
 	t.Run("initializes with envs and app name", func(t *testing.T) {
 		envs := testEnvs()
-		picker := tui.NewEnvPicker("core-api", envs, "")
+		picker := tui.NewEnvPicker(testAppCoreAPI, envs, "")
 
 		if picker.Selected() != "" {
 			t.Error("expected no env selected initially")
@@ -29,7 +29,7 @@ func TestNewEnvPicker(t *testing.T) {
 	})
 
 	t.Run("initializes with empty envs", func(t *testing.T) {
-		picker := tui.NewEnvPicker("core-api", nil, "")
+		picker := tui.NewEnvPicker(testAppCoreAPI, nil, "")
 
 		if picker.Selected() != "" {
 			t.Error("expected no env selected initially")
@@ -40,18 +40,18 @@ func TestNewEnvPicker(t *testing.T) {
 func TestEnvPickerUpdate(t *testing.T) {
 	t.Run("pressing Enter selects the current env", func(t *testing.T) {
 		envs := testEnvs()
-		picker := tui.NewEnvPicker("core-api", envs, "")
+		picker := tui.NewEnvPicker(testAppCoreAPI, envs, "")
 
 		updated, _ := picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
-		if updated.Selected() != "dev" {
-			t.Errorf("expected selected env %q, got %q", "dev", updated.Selected())
+		if updated.Selected() != testEnvDev {
+			t.Errorf("expected selected env %q, got %q", testEnvDev, updated.Selected())
 		}
 	})
 
 	t.Run("pressing Esc signals back", func(t *testing.T) {
 		envs := testEnvs()
-		picker := tui.NewEnvPicker("core-api", envs, "")
+		picker := tui.NewEnvPicker(testAppCoreAPI, envs, "")
 
 		updated, _ := picker.Update(tea.KeyMsg{Type: tea.KeyEsc})
 
@@ -65,7 +65,7 @@ func TestEnvPickerUpdate(t *testing.T) {
 
 	t.Run("pressing q signals quit", func(t *testing.T) {
 		envs := testEnvs()
-		picker := tui.NewEnvPicker("core-api", envs, "")
+		picker := tui.NewEnvPicker(testAppCoreAPI, envs, "")
 
 		updated, _ := picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 
@@ -79,13 +79,13 @@ func TestEnvPickerUpdate(t *testing.T) {
 
 	t.Run("navigating down then pressing Enter selects second env", func(t *testing.T) {
 		envs := testEnvs()
-		picker := tui.NewEnvPicker("core-api", envs, "")
+		picker := tui.NewEnvPicker(testAppCoreAPI, envs, "")
 
 		updated, _ := picker.Update(tea.KeyMsg{Type: tea.KeyDown})
 		updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
-		if updated.Selected() != "staging" {
-			t.Errorf("expected selected env %q, got %q", "staging", updated.Selected())
+		if updated.Selected() != testEnvStaging {
+			t.Errorf("expected selected env %q, got %q", testEnvStaging, updated.Selected())
 		}
 	})
 }
@@ -93,7 +93,7 @@ func TestEnvPickerUpdate(t *testing.T) {
 func TestEnvPickerView(t *testing.T) {
 	t.Run("includes env names in output", func(t *testing.T) {
 		envs := testEnvs()
-		picker := tui.NewEnvPicker("core-api", envs, "")
+		picker := tui.NewEnvPicker(testAppCoreAPI, envs, "")
 
 		view := picker.View()
 
@@ -105,19 +105,19 @@ func TestEnvPickerView(t *testing.T) {
 	})
 
 	t.Run("includes app name in title", func(t *testing.T) {
-		picker := tui.NewEnvPicker("core-api", testEnvs(), "")
+		picker := tui.NewEnvPicker(testAppCoreAPI, testEnvs(), "")
 
 		view := picker.View()
 
-		if !strings.Contains(view, "core-api") {
-			t.Errorf("expected view to contain app name %q, got:\n%s", "core-api", view)
+		if !strings.Contains(view, testAppCoreAPI) {
+			t.Errorf("expected view to contain app name %q, got:\n%s", testAppCoreAPI, view)
 		}
 	})
 }
 
 func TestEnvPickerInit(t *testing.T) {
 	t.Run("returns nil command", func(t *testing.T) {
-		picker := tui.NewEnvPicker("core-api", testEnvs(), "")
+		picker := tui.NewEnvPicker(testAppCoreAPI, testEnvs(), "")
 
 		cmd := picker.Init()
 		if cmd != nil {

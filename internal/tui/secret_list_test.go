@@ -10,9 +10,9 @@ import (
 
 func testSources() []tui.Source {
 	return []tui.Source{
-		{Name: "myapp/dev/db", Backend: "aws"},
-		{Name: "BACstack Local - Core API", Backend: "1pass"},
-		{Name: "myapp/dev/cache", Backend: "aws"},
+		{Name: "myapp/dev/db", Backend: testBackendAWS},
+		{Name: "BACstack Local - Core API", Backend: testBackend1Pass},
+		{Name: "myapp/dev/cache", Backend: testBackendAWS},
 	}
 }
 
@@ -62,8 +62,8 @@ func TestSecretListUpdate(t *testing.T) {
 		if updated.Selected().Name != "myapp/dev/db" {
 			t.Errorf("expected selected source name %q, got %q", "myapp/dev/db", updated.Selected().Name)
 		}
-		if updated.Selected().Backend != "aws" {
-			t.Errorf("expected selected source backend %q, got %q", "aws", updated.Selected().Backend)
+		if updated.Selected().Backend != testBackendAWS {
+			t.Errorf("expected selected source backend %q, got %q", testBackendAWS, updated.Selected().Backend)
 		}
 	})
 

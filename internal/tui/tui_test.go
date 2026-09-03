@@ -1,3 +1,4 @@
+//nolint:testpackage // Testing internal functions requires same package
 package tui
 
 import (
@@ -11,18 +12,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Fixture values shared by the TUI tests.
+const (
+	testAppAPI        = "api"
+	testAppCoreAPI    = "core-api"
+	testEnvDev        = "dev"
+	testEnvProd       = "prod"
+	testEnvLocal      = "local"
+	testEnvStaging    = "staging"
+	testRegion        = "us-east-1"
+	testKeyDBHost     = "DB_HOST"
+	testHostLocalhost = "localhost"
+	testItemID        = "item-1"
+	testVaultID       = "vault-1"
+	testItemName      = "db-creds"
+	testBackendAWS    = "aws"
+	testBackend1Pass  = "1pass"
+)
+
 // mockEditor implements secrets.Editor and optionally secrets.FieldTypeEditor.
 type mockEditor struct {
-	vaults   []secrets.Vault
-	items    []secrets.Item
-	fields   []secrets.Field
-	calls    []string // records method names
-	hasTypes bool     // if true, also implement FieldTypeEditor via mockFieldTypeEditor
+	vaults []secrets.Vault
+	items  []secrets.Item
+	fields []secrets.Field
+	calls  []string // records method names
 }
 
 func (m *mockEditor) GetSecret(_ context.Context, _ string) (map[string]string, error) {
 	m.calls = append(m.calls, "GetSecret")
-	return nil, nil
+	return map[string]string{}, nil
 }
 
 func (m *mockEditor) GetSecretKey(_ context.Context, _, _ string) (string, error) {
@@ -80,15 +98,15 @@ func (m *mockFieldTypeEditor) SetFieldType(_ context.Context, _ string, _ secret
 func newMockEditor() *mockEditor {
 	return &mockEditor{
 		vaults: []secrets.Vault{
-			{ID: "vault-1", Name: "Development"},
+			{ID: testVaultID, Name: "Development"},
 			{ID: "vault-2", Name: "Staging"},
 		},
 		items: []secrets.Item{
-			{ID: "item-1", Name: "db-creds", Vault: "vault-1"},
-			{ID: "item-2", Name: "api-keys", Vault: "vault-1"},
+			{ID: testItemID, Name: testItemName, Vault: testVaultID},
+			{ID: "item-2", Name: "api-keys", Vault: testVaultID},
 		},
 		fields: []secrets.Field{
-			{ID: "f1", Key: "DB_HOST", Value: "localhost", Type: secrets.FieldText},
+			{ID: "f1", Key: testKeyDBHost, Value: testHostLocalhost, Type: secrets.FieldText},
 			{ID: "f2", Key: "DB_PASS", Value: "secret", Type: secrets.FieldConcealed},
 		},
 	}
@@ -140,7 +158,7 @@ func TestNew_DefaultStartsAtVaultPicker(t *testing.T) {
 
 func TestNew_WithVaultSkipsToItemList(t *testing.T) {
 	editor := newMockEditor()
-	m := New(Options{Editor: editor, Vault: "vault-1"})
+	m := New(Options{Editor: editor, Vault: testVaultID})
 
 	assert.Equal(t, screenItemList, m.screen)
 	assert.True(t, m.loading)
@@ -148,7 +166,7 @@ func TestNew_WithVaultSkipsToItemList(t *testing.T) {
 
 func TestNew_WithVaultAndItemSkipsToFieldEditor(t *testing.T) {
 	editor := newMockEditor()
-	m := New(Options{Editor: editor, Vault: "vault-1", Item: "item-1"})
+	m := New(Options{Editor: editor, Vault: testVaultID, Item: testItemID})
 
 	assert.Equal(t, screenFieldEditor, m.screen)
 	assert.True(t, m.loading)
@@ -170,7 +188,7 @@ func TestInit_VaultPicker_LoadsVaults(t *testing.T) {
 
 func TestInit_ItemList_LoadsItems(t *testing.T) {
 	editor := newMockEditor()
-	m := New(Options{Editor: editor, Vault: "vault-1"})
+	m := New(Options{Editor: editor, Vault: testVaultID})
 
 	cmd := m.Init()
 	require.NotNil(t, cmd)
@@ -184,7 +202,7 @@ func TestInit_ItemList_LoadsItems(t *testing.T) {
 
 func TestInit_FieldEditor_LoadsFields(t *testing.T) {
 	editor := newMockEditor()
-	m := New(Options{Editor: editor, Vault: "vault-1", Item: "item-1"})
+	m := New(Options{Editor: editor, Vault: testVaultID, Item: testItemID})
 
 	cmd := m.Init()
 	require.NotNil(t, cmd)
@@ -230,7 +248,7 @@ func TestUpdate_VaultSelected_TransitionsToItemList(t *testing.T) {
 
 func TestUpdate_ItemsLoaded_StopsLoading(t *testing.T) {
 	editor := newMockEditor()
-	m := New(Options{Editor: editor, Vault: "vault-1"})
+	m := New(Options{Editor: editor, Vault: testVaultID})
 
 	model, _ := updateModel(t, m, itemsLoadedMsg{items: editor.items})
 
@@ -240,7 +258,7 @@ func TestUpdate_ItemsLoaded_StopsLoading(t *testing.T) {
 
 func TestUpdate_ItemSelected_TransitionsToFieldEditor(t *testing.T) {
 	editor := newMockEditor()
-	m := New(Options{Editor: editor, Vault: "vault-1"})
+	m := New(Options{Editor: editor, Vault: testVaultID})
 
 	// Load items first
 	m, _ = updateModel(t, m, itemsLoadedMsg{items: editor.items})
@@ -284,7 +302,7 @@ func TestUpdate_BackFromItemList_ReturnsToVaultPicker(t *testing.T) {
 
 func TestUpdate_BackFromFieldEditor_ReturnsToItemList(t *testing.T) {
 	editor := newMockEditor()
-	m := New(Options{Editor: editor, Vault: "vault-1"})
+	m := New(Options{Editor: editor, Vault: testVaultID})
 
 	// Load items
 	m, _ = updateModel(t, m, itemsLoadedMsg{items: editor.items})
@@ -293,8 +311,8 @@ func TestUpdate_BackFromFieldEditor_ReturnsToItemList(t *testing.T) {
 	// Load fields
 	m, _ = updateModel(t, m, fieldsLoadedMsg{
 		fields:   editor.fields,
-		itemRef:  "item-1",
-		itemName: "db-creds",
+		itemRef:  testItemID,
+		itemName: testItemName,
 	})
 
 	// Press Esc to go back
@@ -311,11 +329,11 @@ func TestUpdate_BackFromFieldEditor_ReturnsToItemList(t *testing.T) {
 
 func TestUpdate_SaveChanges_CallsEditorMethods(t *testing.T) {
 	editor := newMockEditor()
-	m := New(Options{Editor: editor, Vault: "vault-1", Item: "item-1"})
-	m.currentItem = &secrets.Item{ID: "item-1", Name: "db-creds", Vault: "vault-1"}
+	m := New(Options{Editor: editor, Vault: testVaultID, Item: testItemID})
+	m.currentItem = &secrets.Item{ID: testItemID, Name: testItemName, Vault: testVaultID}
 
 	changes := []PendingChange{
-		{Type: "update", Field: secrets.Field{Key: "DB_HOST", Value: "newhost"}},
+		{Type: "update", Field: secrets.Field{Key: testKeyDBHost, Value: "newhost"}},
 		{Type: "delete", Field: secrets.Field{Key: "OLD_KEY"}},
 		{Type: "rename", Field: secrets.Field{Key: "NEW_KEY"}, OldKey: "OLD_KEY"},
 	}
@@ -325,7 +343,7 @@ func TestUpdate_SaveChanges_CallsEditorMethods(t *testing.T) {
 
 	result, ok := msg.(saveCompleteMsg)
 	require.True(t, ok)
-	assert.Nil(t, result.err)
+	require.NoError(t, result.err)
 
 	assert.Contains(t, editor.calls, "UpdateField")
 	assert.Contains(t, editor.calls, "DeleteField")
@@ -334,11 +352,11 @@ func TestUpdate_SaveChanges_CallsEditorMethods(t *testing.T) {
 
 func TestUpdate_SaveChanges_SetTypeCallsFieldTypeEditor(t *testing.T) {
 	editor := newMockFieldTypeEditor()
-	m := New(Options{Editor: editor, Vault: "vault-1", Item: "item-1"})
-	m.currentItem = &secrets.Item{ID: "item-1", Name: "db-creds", Vault: "vault-1"}
+	m := New(Options{Editor: editor, Vault: testVaultID, Item: testItemID})
+	m.currentItem = &secrets.Item{ID: testItemID, Name: testItemName, Vault: testVaultID}
 
 	changes := []PendingChange{
-		{Type: "set_type", Field: secrets.Field{Key: "DB_HOST"}, NewType: secrets.FieldConcealed},
+		{Type: "set_type", Field: secrets.Field{Key: testKeyDBHost}, NewType: secrets.FieldConcealed},
 	}
 
 	cmd := m.saveChanges(changes)
@@ -346,17 +364,17 @@ func TestUpdate_SaveChanges_SetTypeCallsFieldTypeEditor(t *testing.T) {
 
 	result, ok := msg.(saveCompleteMsg)
 	require.True(t, ok)
-	assert.Nil(t, result.err)
+	require.NoError(t, result.err)
 	assert.Contains(t, editor.calls, "SetFieldType")
 }
 
 func TestUpdate_SetType_NoFieldTypeEditor_Skips(t *testing.T) {
 	editor := newMockEditor() // does NOT implement FieldTypeEditor
-	m := New(Options{Editor: editor, Vault: "vault-1", Item: "item-1"})
-	m.currentItem = &secrets.Item{ID: "item-1", Name: "db-creds", Vault: "vault-1"}
+	m := New(Options{Editor: editor, Vault: testVaultID, Item: testItemID})
+	m.currentItem = &secrets.Item{ID: testItemID, Name: testItemName, Vault: testVaultID}
 
 	changes := []PendingChange{
-		{Type: "set_type", Field: secrets.Field{Key: "DB_HOST"}, NewType: secrets.FieldConcealed},
+		{Type: "set_type", Field: secrets.Field{Key: testKeyDBHost}, NewType: secrets.FieldConcealed},
 	}
 
 	cmd := m.saveChanges(changes)
@@ -364,7 +382,7 @@ func TestUpdate_SetType_NoFieldTypeEditor_Skips(t *testing.T) {
 
 	result, ok := msg.(saveCompleteMsg)
 	require.True(t, ok)
-	assert.Nil(t, result.err)
+	require.NoError(t, result.err)
 	assert.NotContains(t, editor.calls, "SetFieldType")
 }
 
@@ -435,11 +453,11 @@ func TestView_DelegatesToActiveScreen(t *testing.T) {
 
 func TestSaveComplete_ReloadsFields(t *testing.T) {
 	editor := newMockEditor()
-	m := New(Options{Editor: editor, Vault: "vault-1", Item: "item-1"})
-	m.currentItem = &secrets.Item{ID: "item-1", Name: "db-creds", Vault: "vault-1"}
+	m := New(Options{Editor: editor, Vault: testVaultID, Item: testItemID})
+	m.currentItem = &secrets.Item{ID: testItemID, Name: testItemName, Vault: testVaultID}
 	m.loading = false
 	m.screen = screenFieldEditor
-	m.fieldEditor = NewFieldEditor("item-1", "db-creds", editor.fields, false)
+	m.fieldEditor = NewFieldEditor(testItemID, testItemName, editor.fields, false)
 
 	model, cmd := updateModel(t, m, saveCompleteMsg{})
 
@@ -454,16 +472,16 @@ func TestSaveComplete_ReloadsFields(t *testing.T) {
 
 func newTestConfigContext() *ConfigContext {
 	return &ConfigContext{
-		Apps: []string{"core-api", "web-app"},
+		Apps: []string{testAppCoreAPI, "web-app"},
 		Envs: map[string][]string{
-			"core-api": {"local", "staging"},
-			"web-app":  {"local", "production"},
+			testAppCoreAPI: {testEnvLocal, testEnvStaging},
+			"web-app":      {testEnvLocal, "production"},
 		},
 		Sources: map[string][]Source{
-			"core-api/local":      {{Name: "core-api-local-secrets", Backend: "1pass"}},
-			"core-api/staging":    {{Name: "core-api-staging-secrets", Backend: "aws"}},
-			"web-app/local":       {{Name: "web-app-local-secrets", Backend: "1pass"}},
-			"web-app/production":  {{Name: "web-app-prod-secrets", Backend: "aws"}},
+			"core-api/local":     {{Name: "core-api-local-secrets", Backend: testBackend1Pass}},
+			"core-api/staging":   {{Name: "core-api-staging-secrets", Backend: testBackendAWS}},
+			"web-app/local":      {{Name: "web-app-local-secrets", Backend: testBackend1Pass}},
+			"web-app/production": {{Name: "web-app-prod-secrets", Backend: testBackendAWS}},
 		},
 		DefaultApp: "",
 		DefaultEnv: "",
@@ -473,8 +491,8 @@ func newTestConfigContext() *ConfigContext {
 func newTestEditorFactory() *mockEditorFactory {
 	return &mockEditorFactory{
 		editors: map[string]*mockEditor{
-			"1pass": newMockEditor(),
-			"aws":   newMockEditor(),
+			testBackend1Pass: newMockEditor(),
+			testBackendAWS:   newMockEditor(),
 		},
 	}
 }
@@ -496,11 +514,11 @@ func TestNew_ConfigMode_SingleApp_AutoSkipsToEnvPicker(t *testing.T) {
 	cfg := &ConfigContext{
 		Apps: []string{"only-app"},
 		Envs: map[string][]string{
-			"only-app": {"local", "staging"},
+			"only-app": {testEnvLocal, testEnvStaging},
 		},
 		Sources: map[string][]Source{
-			"only-app/local":   {{Name: "secrets", Backend: "aws"}},
-			"only-app/staging": {{Name: "secrets", Backend: "aws"}},
+			"only-app/local":   {{Name: "secrets", Backend: testBackendAWS}},
+			"only-app/staging": {{Name: "secrets", Backend: testBackendAWS}},
 		},
 	}
 	factory := newTestEditorFactory()
@@ -520,11 +538,11 @@ func TestNew_ConfigMode_AppFlag_SkipsAppPicker(t *testing.T) {
 	m := New(Options{
 		Config:        cfg,
 		EditorFactory: factory.create,
-		App:           "core-api",
+		App:           testAppCoreAPI,
 	})
 
 	assert.Equal(t, screenEnvPicker, m.screen)
-	assert.Equal(t, "core-api", m.currentApp)
+	assert.Equal(t, testAppCoreAPI, m.currentApp)
 	assert.False(t, m.loading)
 }
 
@@ -534,13 +552,13 @@ func TestNew_ConfigMode_AppAndEnvFlags_SkipToSecretList(t *testing.T) {
 	m := New(Options{
 		Config:        cfg,
 		EditorFactory: factory.create,
-		App:           "core-api",
-		Env:           "local",
+		App:           testAppCoreAPI,
+		Env:           testEnvLocal,
 	})
 
 	assert.Equal(t, screenSecretList, m.screen)
-	assert.Equal(t, "core-api", m.currentApp)
-	assert.Equal(t, "local", m.currentEnv)
+	assert.Equal(t, testAppCoreAPI, m.currentApp)
+	assert.Equal(t, testEnvLocal, m.currentEnv)
 	assert.False(t, m.loading)
 }
 
@@ -565,7 +583,7 @@ func TestConfigMode_SelectEnv_TransitionsToSecretList(t *testing.T) {
 	m := New(Options{
 		Config:        cfg,
 		EditorFactory: factory.create,
-		App:           "core-api",
+		App:           testAppCoreAPI,
 	})
 
 	// At env picker, press Enter to select first env
@@ -581,8 +599,8 @@ func TestConfigMode_SelectSource_CallsEditorFactory(t *testing.T) {
 	m := New(Options{
 		Config:        cfg,
 		EditorFactory: factory.create,
-		App:           "core-api",
-		Env:           "local",
+		App:           testAppCoreAPI,
+		Env:           testEnvLocal,
 	})
 
 	// At secret list, press Enter to select the source
@@ -597,7 +615,7 @@ func TestConfigMode_SelectSource_CallsEditorFactory(t *testing.T) {
 	require.True(t, ok)
 	assert.NotNil(t, created.editor)
 	assert.Equal(t, "core-api-local-secrets", created.source.Name)
-	assert.Contains(t, factory.calls, "1pass")
+	assert.Contains(t, factory.calls, testBackend1Pass)
 
 	// Feed the editorCreatedMsg back to transition to field editor
 	model, cmd = updateModel(t, model, created)
@@ -617,8 +635,8 @@ func TestConfigMode_BrowseMode_SwitchesToVaultPicker(t *testing.T) {
 	m := New(Options{
 		Config:        cfg,
 		EditorFactory: factory.create,
-		App:           "core-api",
-		Env:           "local",
+		App:           testAppCoreAPI,
+		Env:           testEnvLocal,
 	})
 
 	// At secret list, press 'b' for browse mode
@@ -679,7 +697,7 @@ func TestInit_ConfigMode_EnvPicker_ReturnsNil(t *testing.T) {
 	m := New(Options{
 		Config:        cfg,
 		EditorFactory: factory.create,
-		App:           "core-api",
+		App:           testAppCoreAPI,
 	})
 
 	cmd := m.Init()
@@ -692,8 +710,8 @@ func TestInit_ConfigMode_SecretList_ReturnsNil(t *testing.T) {
 	m := New(Options{
 		Config:        cfg,
 		EditorFactory: factory.create,
-		App:           "core-api",
-		Env:           "local",
+		App:           testAppCoreAPI,
+		Env:           testEnvLocal,
 	})
 
 	cmd := m.Init()
@@ -718,7 +736,7 @@ func TestView_ConfigMode_EnvPicker(t *testing.T) {
 	m := New(Options{
 		Config:        cfg,
 		EditorFactory: factory.create,
-		App:           "core-api",
+		App:           testAppCoreAPI,
 	})
 
 	view := m.View()
@@ -731,8 +749,8 @@ func TestView_ConfigMode_SecretList(t *testing.T) {
 	m := New(Options{
 		Config:        cfg,
 		EditorFactory: factory.create,
-		App:           "core-api",
-		Env:           "local",
+		App:           testAppCoreAPI,
+		Env:           testEnvLocal,
 	})
 
 	view := m.View()
