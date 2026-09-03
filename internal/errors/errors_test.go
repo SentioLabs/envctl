@@ -3,6 +3,7 @@ package errors
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -173,4 +174,12 @@ func TestIncludeAllRequiredError_Error(t *testing.T) {
 	assert.Contains(t, err.Error(), "shared/common")
 	assert.Contains(t, err.Error(), "key")
 	assert.Contains(t, err.Error(), "include_all")
+}
+
+func TestFileSinkKeyRequiredError(t *testing.T) {
+	err := &FileSinkKeyRequiredError{Secret: "op://vault/item", Backend: "1password"}
+	msg := err.Error()
+	if !strings.Contains(msg, "op://vault/item") || !strings.Contains(msg, "set 'key:'") {
+		t.Fatalf("unexpected message: %s", msg)
+	}
 }

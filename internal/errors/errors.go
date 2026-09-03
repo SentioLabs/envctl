@@ -127,3 +127,17 @@ type IncludeAllRequiredError struct {
 func (e *IncludeAllRequiredError) Error() string {
 	return fmt.Sprintf("include entry for %q must specify 'key' (or set include_all: true to include all keys)", e.Secret)
 }
+
+// FileSinkKeyRequiredError is returned when a file sink has no key: and the
+// backend cannot return raw content.
+type FileSinkKeyRequiredError struct {
+	Secret  string
+	Backend string
+}
+
+func (e *FileSinkKeyRequiredError) Error() string {
+	return fmt.Sprintf(
+		"file sink for %q: backend %s cannot return raw content; set 'key:' to choose a field",
+		e.Secret, e.Backend,
+	)
+}

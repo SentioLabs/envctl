@@ -22,6 +22,19 @@ type BuilderOptions struct {
 	Refresh bool
 }
 
+// ResolvedFile is a file sink with its content fetched.
+type ResolvedFile struct {
+	Sink    config.FileSink
+	Secret  string
+	Content []byte
+}
+
+// Result is the output of BuildWithFiles.
+type Result struct {
+	Entries []Entry
+	Files   []ResolvedFile
+}
+
 // Builder builds environment variables from configuration.
 type Builder struct {
 	secrets    secrets.Client
@@ -73,9 +86,32 @@ func (b *Builder) shouldIncludeAll() bool {
 }
 
 // Build resolves all environment variables according to precedence rules.
+// Sources that carry a file: block are skipped here and never fetched;
+// use BuildWithFiles to resolve them.
+func (b *Builder) Build(ctx context.Context, overrides map[string]string) ([]Entry, error) {
+	return b.build(ctx, overrides)
+}
+
+// BuildWithFiles resolves environment entries and fetches every file sink's
+// content. Sink content never appears in Entries.
+func (b *Builder) BuildWithFiles(ctx context.Context, overrides map[string]string) (*Result, error) {
+	entries, err := b.build(ctx, overrides)
+	if err != nil {
+		return nil, err
+	}
+	files, err := b.processFiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{Entries: entries, Files: files}, nil
+}
+
+// build is the shared environment-variable resolution.
 // Sources are processed in order (later sources override earlier ones),
 // then mappings, then overrides.
-func (b *Builder) Build(ctx context.Context, overrides map[string]string) ([]Entry, error) {
+//
+//nolint:revive // confusing-naming: build/Build split is intentional; Build and BuildWithFiles both call build
+func (b *Builder) build(ctx context.Context, overrides map[string]string) ([]Entry, error) {
 	entries := make(map[string]Entry)
 
 	// Resolve environment config based on mode
@@ -86,9 +122,8 @@ func (b *Builder) Build(ctx context.Context, overrides map[string]string) ([]Ent
 	includeAll := b.shouldIncludeAll()
 
 	// 1. Process primary source (first entry) using the primary client.
-	//    When includeAll is false and no explicit key/keys, primary is skipped
-	//    (mappings may still reference the secret directly).
-	if len(b.env.Sources) > 0 {
+	//    A primary that is a file sink contributes nothing here.
+	if len(b.env.Sources) > 0 && b.env.Sources[0].File == nil {
 		if err := b.processPrimary(ctx, entries, b.env.Sources[0], includeAll); err != nil {
 			return nil, err
 		}
@@ -231,6 +266,10 @@ func (b *Builder) processIncludes(
 	includeAll bool,
 ) error {
 	for _, inc := range includes {
+		if inc.File != nil {
+			continue // resolved by processFiles
+		}
+
 		client, err := b.clientForInclude(ctx, inc)
 		if err != nil {
 			return err
@@ -308,6 +347,52 @@ func (b *Builder) processMapping(ctx context.Context, entries map[string]Entry, 
 		}
 	}
 	return nil
+}
+
+// clientForSource returns the primary client for the first source and the
+// include-resolved client for every other source.
+func (b *Builder) clientForSource(ctx context.Context, i int, src config.IncludeEntry) (secrets.Client, error) {
+	if i == 0 {
+		return b.secrets, nil
+	}
+	return b.clientForInclude(ctx, src)
+}
+
+// processFiles fetches content for every source that carries a file: block.
+// A keyed sink reads one field. A keyless sink needs a backend that implements
+// secrets.RawReader and receives the secret verbatim.
+func (b *Builder) processFiles(ctx context.Context) ([]ResolvedFile, error) {
+	var files []ResolvedFile
+	for i, src := range b.env.Sources {
+		if src.File == nil {
+			continue
+		}
+		client, err := b.clientForSource(ctx, i, src)
+		if err != nil {
+			return nil, err
+		}
+
+		var content []byte
+		if src.Key != "" {
+			value, err := client.GetSecretKey(ctx, src.Secret, src.Key)
+			if err != nil {
+				return nil, err
+			}
+			content = []byte(value)
+		} else {
+			raw, ok := client.(secrets.RawReader)
+			if !ok {
+				return nil, &errors.FileSinkKeyRequiredError{Secret: src.Secret, Backend: client.Name()}
+			}
+			content, err = raw.GetSecretRaw(ctx, src.Secret)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		files = append(files, ResolvedFile{Sink: *src.File, Secret: src.Secret, Content: content})
+	}
+	return files, nil
 }
 
 // ToMap converts entries to a simple key-value map.
