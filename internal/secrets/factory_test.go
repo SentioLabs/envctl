@@ -1,6 +1,7 @@
 package secrets_test
 
 import (
+	"os/exec"
 	"testing"
 
 	"github.com/sentiolabs/envctl/internal/config"
@@ -102,6 +103,10 @@ func TestNewClientDefaultsToAWS(t *testing.T) {
 }
 
 func TestNewClientRoutesTo1Password(t *testing.T) {
+	if _, err := exec.LookPath("op"); err != nil {
+		t.Skip("1Password CLI (op) not installed")
+	}
+
 	t.Run("when env has 1pass config", func(t *testing.T) {
 		e := config.NewEnvironment(config.IncludeEntry{
 			Secret: "test/secret",
