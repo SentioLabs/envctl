@@ -63,6 +63,16 @@ const (
 	FieldConcealed FieldType = "concealed"
 )
 
+// op CLI flags and subcommands.
+const (
+	flagFormat  = "--format"
+	flagVault   = "--vault"
+	flagAccount = "--account"
+	cmdEdit     = "edit"
+	cmdItem     = "item"
+	formatJSON  = "json"
+)
+
 // EditorField represents a field returned by the editor.
 type EditorField struct {
 	ID      string
@@ -74,9 +84,9 @@ type EditorField struct {
 
 // ListEditorVaults returns available 1Password vaults.
 func (e *OPEditor) ListEditorVaults(ctx context.Context) ([]EditorVault, error) {
-	args := []string{"vault", "list", "--format", "json"}
+	args := []string{"vault", "list", flagFormat, formatJSON}
 	if e.account != "" {
-		args = append(args, "--account", e.account)
+		args = append(args, flagAccount, e.account)
 	}
 
 	output, err := e.runCmd(ctx, args...)
@@ -105,9 +115,9 @@ type opItemListEntry struct {
 
 // ListEditorItems returns items in a vault.
 func (e *OPEditor) ListEditorItems(ctx context.Context, vault string) ([]EditorItem, error) {
-	args := []string{"item", "list", "--vault", vault, "--format", "json"}
+	args := []string{cmdItem, "list", flagVault, vault, flagFormat, formatJSON}
 	if e.account != "" {
-		args = append(args, "--account", e.account)
+		args = append(args, flagAccount, e.account)
 	}
 
 	output, err := e.runCmd(ctx, args...)
@@ -191,9 +201,9 @@ func (e *OPEditor) UpdateField(ctx context.Context, ref string, key, value, sect
 		fieldRef = section + "." + key
 	}
 	assignment := fmt.Sprintf("%s=%s", fieldRef, value)
-	args := []string{"item", "edit", parsedRef.Item, assignment, "--vault", parsedRef.Vault}
+	args := []string{cmdItem, cmdEdit, parsedRef.Item, assignment, flagVault, parsedRef.Vault}
 	if e.account != "" {
-		args = append(args, "--account", e.account)
+		args = append(args, flagAccount, e.account)
 	}
 
 	_, err = e.runCmd(ctx, args...)
@@ -216,9 +226,9 @@ func (e *OPEditor) DeleteField(ctx context.Context, ref, key, section string) er
 		fieldRef = section + "." + key
 	}
 	deleteExpr := fieldRef + "[delete]"
-	args := []string{"item", "edit", parsedRef.Item, deleteExpr, "--vault", parsedRef.Vault}
+	args := []string{cmdItem, cmdEdit, parsedRef.Item, deleteExpr, flagVault, parsedRef.Vault}
 	if e.account != "" {
-		args = append(args, "--account", e.account)
+		args = append(args, flagAccount, e.account)
 	}
 
 	_, err = e.runCmd(ctx, args...)
@@ -263,12 +273,12 @@ func (e *OPEditor) RenameField(ctx context.Context, ref, oldKey, newKey, section
 
 // CreateEditorItem creates a new 1Password item with the given fields.
 func (e *OPEditor) CreateEditorItem(ctx context.Context, vault, name string, fields []FieldPair) error {
-	args := []string{"item", "create", "--vault", vault, "--title", name, "--category", "SecureNote"}
+	args := []string{cmdItem, "create", flagVault, vault, "--title", name, "--category", "SecureNote"}
 	for _, f := range fields {
 		args = append(args, fmt.Sprintf("%s=%s", f.Key, f.Value))
 	}
 	if e.account != "" {
-		args = append(args, "--account", e.account)
+		args = append(args, flagAccount, e.account)
 	}
 
 	_, err := e.runCmd(ctx, args...)
@@ -316,9 +326,9 @@ func (e *OPEditor) SetEditorFieldType(ctx context.Context, ref, key, section str
 		fieldRef = section + "." + key
 	}
 	typeExpr := fmt.Sprintf("%s[%s]=%s", fieldRef, opType, value)
-	args := []string{"item", "edit", parsedRef.Item, typeExpr, "--vault", parsedRef.Vault}
+	args := []string{cmdItem, cmdEdit, parsedRef.Item, typeExpr, flagVault, parsedRef.Vault}
 	if e.account != "" {
-		args = append(args, "--account", e.account)
+		args = append(args, flagAccount, e.account)
 	}
 
 	_, err = e.runCmd(ctx, args...)
@@ -340,11 +350,11 @@ func (e *OPEditor) BatchEdit(ctx context.Context, ref string, assignments []stri
 		parsedRef.Vault = e.defaultVault
 	}
 
-	args := []string{"item", "edit", parsedRef.Item}
+	args := []string{cmdItem, cmdEdit, parsedRef.Item}
 	args = append(args, assignments...)
-	args = append(args, "--vault", parsedRef.Vault)
+	args = append(args, flagVault, parsedRef.Vault)
 	if e.account != "" {
-		args = append(args, "--account", e.account)
+		args = append(args, flagAccount, e.account)
 	}
 
 	_, err = e.runCmd(ctx, args...)
@@ -363,7 +373,7 @@ func (e *OPEditor) fetchItem(ctx context.Context, ref string) (*Item, error) {
 
 	args := parsedRef.CLIArgs()
 	if e.account != "" {
-		args = append(args, "--account", e.account)
+		args = append(args, flagAccount, e.account)
 	}
 
 	output, err := e.runCmd(ctx, args...)

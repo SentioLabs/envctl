@@ -141,9 +141,9 @@ func (r *Reference) CLIArgs() []string {
 	}
 
 	// Use 'op item get' for full items
-	args := []string{"item", "get", r.Item, "--format", "json"}
+	args := []string{cmdItem, "get", r.Item, flagFormat, formatJSON}
 	if r.Vault != "" {
-		args = append(args, "--vault", r.Vault)
+		args = append(args, flagVault, r.Vault)
 	}
 	return args
 }

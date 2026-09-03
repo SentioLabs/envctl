@@ -126,7 +126,7 @@ func (c *Client) GetSecretKey(ctx context.Context, secretRef, key string) (strin
 func (c *Client) getItem(ctx context.Context, ref *Reference) (*Item, error) {
 	args := ref.CLIArgs()
 	if c.account != "" {
-		args = append(args, "--account", c.account)
+		args = append(args, flagAccount, c.account)
 	}
 
 	output, err := c.runOP(ctx, args...)
@@ -146,7 +146,7 @@ func (c *Client) getItem(ctx context.Context, ref *Reference) (*Item, error) {
 func (c *Client) readField(ctx context.Context, ref *Reference) (string, error) {
 	args := []string{"read", ref.String()}
 	if c.account != "" {
-		args = append(args, "--account", c.account)
+		args = append(args, flagAccount, c.account)
 	}
 
 	output, err := c.runOP(ctx, args...)
@@ -222,13 +222,13 @@ func checkCLI() error {
 // Returns nil if authenticated, error otherwise.
 func (c *Client) CheckAuth(ctx context.Context) error {
 	// Try to list vaults as a quick auth check
-	_, err := c.runOP(ctx, "vault", "list", "--format", "json")
+	_, err := c.runOP(ctx, "vault", "list", flagFormat, formatJSON)
 	return err
 }
 
 // ListVaults returns available vaults.
 func (c *Client) ListVaults(ctx context.Context) ([]VaultRef, error) {
-	output, err := c.runOP(ctx, "vault", "list", "--format", "json")
+	output, err := c.runOP(ctx, "vault", "list", flagFormat, formatJSON)
 	if err != nil {
 		return nil, err
 	}
