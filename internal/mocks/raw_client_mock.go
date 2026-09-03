@@ -1,5 +1,7 @@
-// Hand-written mocks for the optional secrets.RawReader interface.
-// The generated MockClient stays untouched; MockRawClient composes it.
+// Hand-written mocks for the optional secrets.RawReader interface. Mockery
+// never regenerates this file: .mockery.yaml excludes RawReader via
+// exclude-interface-regex. The generated MockClient stays untouched;
+// MockRawClient composes it.
 package mocks
 
 import (
