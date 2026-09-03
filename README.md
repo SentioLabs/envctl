@@ -912,7 +912,7 @@ No tokens or credentials to manage - just unlock 1Password once per session.
 
 #### `envctl run`
 
-Run a command with secrets injected. Sources with a `file:` block are written to a per-run directory and their paths exported through `path_as`; see [File Sinks](#file-sinks).
+Run a command with secrets injected. Sources with a `file:` block are written to a per-run directory and their paths exported through `path_as`. See [File Sinks](#file-sinks).
 
 ```bash
 envctl run [flags] -- command [args...]
@@ -1124,9 +1124,9 @@ envctl is for **local development only**. In CI/CD and production:
 ## Security
 
 - **Never logs secret values** - Only key names appear in verbose output
-- **File sinks are ephemeral and 0600 by default** - Written to a per-run 0700 directory outside any repo, replaced atomically, removed on exit. Their content never reaches stdout; only paths do
+- **File sinks are ephemeral and 0600 by default** - Written to a per-run 0700 directory outside any repo, replaced atomically, removed on exit. Their content never reaches stdout. Only paths do
 - **No shell expansion** - Commands are executed directly, preventing injection attacks
-- **Memory hygiene** - Secret buffers are cleared after use on a best-effort basis; Go strings returned by backend SDKs may be copied by the runtime
+- **Memory hygiene** - Secret buffers are cleared after use on a best-effort basis. Go strings returned by backend SDKs may be copied by the runtime
 - **File permission warnings** - Alerts if `.env` files have insecure permissions
 - **Gitignore checks** - Warns if `.env` is not in `.gitignore`
 - **Encrypted cache** - Cached secrets use AES-256-GCM encryption or OS keyring
