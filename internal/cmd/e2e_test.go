@@ -186,13 +186,18 @@ func readMarker(t *testing.T, dir, name string) string {
 	return strings.TrimSpace(string(b))
 }
 
-// e2eChildScript records what the child process observed into OUT.
+// e2eChildScript records what the child process observed into OUT. The
+// final "ready" marker uses a plain redirection, not a pipeline: sh still
+// holds SIGINT while any of the preceding pipelines' children (cut) are
+// running, so a marker written by a pipeline is not proof the shell itself
+// is ready to receive a signal.
 func e2eChildScript(tail string) string {
 	return `printf %s "$KEY_FILE" > "$OUT/path"; ` +
 		`printf %s "$FILES_DIR" > "$OUT/dir"; ` +
 		`cp "$KEY_FILE" "$OUT/copy"; ` +
 		`ls -ld "$FILES_DIR" | cut -c1-10 > "$OUT/dirmode"; ` +
-		`ls -l "$KEY_FILE" | cut -c1-10 > "$OUT/filemode"; ` + tail
+		`ls -l "$KEY_FILE" | cut -c1-10 > "$OUT/filemode"; ` +
+		`: > "$OUT/ready"; ` + tail
 }
 
 func TestE2E_RunPropagatesExitCodeAndRemovesRunDir(t *testing.T) {
@@ -233,16 +238,24 @@ func TestE2E_RunSIGINTFromOutsideRemovesRunDir(t *testing.T) {
 		"-c", configPath, "run", "--", "sh", "-c", e2eChildScript("exec sleep 30"))
 	require.NoError(t, cmd.Start())
 
+	// Wait for the "ready" marker, written after every pipeline in the child
+	// script by a plain redirection. sh (the child before it execs into
+	// sleep) swallows a SIGINT that arrives while it is still waiting on a
+	// pipeline's children (cut), even though an earlier pipeline stage
+	// already wrote its own output file; the script simply continues to
+	// `exec sleep 30` with the signal consumed. Waiting for "ready" closes
+	// that window.
 	require.Eventually(t, func() bool {
-		_, err := os.Stat(filepath.Join(out, "filemode"))
+		_, err := os.Stat(filepath.Join(out, "ready"))
 		return err == nil
 	}, 15*time.Second, 20*time.Millisecond, "child never started; stderr: %s", stderr.String())
 
-	// A real cross-process SIGINT, as a terminal would deliver it. Under
-	// heavy system load, delivery of one kill(2) call can be delayed past
-	// any reasonable timeout (the same phenomenon the self-signal SIGINT
-	// test in files_integration_test.go documents), so retry on a short
-	// interval until envctl is observed to exit.
+	// A real cross-process SIGINT, as a terminal would deliver it. The
+	// resend loop below is defense in depth for any scheduling delay left
+	// after closing the readiness race above: under heavy CPU contention
+	// the OS can take a while to schedule envctl's signal-forwarding
+	// goroutine, so retry on a short interval until envctl is observed to
+	// exit.
 	require.NoError(t, cmd.Process.Signal(syscall.SIGINT))
 
 	done := make(chan error, 1)

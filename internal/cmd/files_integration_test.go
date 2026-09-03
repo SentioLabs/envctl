@@ -118,13 +118,17 @@ func captureStdout(t *testing.T, fn func() error) (string, error) { return captu
 func captureStderr(t *testing.T, fn func() error) (string, error) { return capture(t, &os.Stderr, fn) }
 
 // childScript is a portable shell body that records what the child observed.
-// OUT is the directory the child writes into.
+// OUT is the directory the child writes into. The final "ready" marker uses
+// a plain redirection, not a pipeline: sh still holds SIGINT while any of the
+// preceding pipelines' children (cut) are running, so a marker written by a
+// pipeline is not proof the shell itself is ready to receive a signal.
 func childScript(out, tail string) []string {
 	body := `printf %s "$KEY_FILE" > "$OUT/path"; ` +
 		`printf %s "$FILES_DIR" > "$OUT/dir"; ` +
 		`cp "$KEY_FILE" "$OUT/copy"; ` +
 		`ls -ld "$FILES_DIR" | cut -c1-10 > "$OUT/dirmode"; ` +
-		`ls -l "$KEY_FILE" | cut -c1-10 > "$OUT/filemode"; ` + tail
+		`ls -l "$KEY_FILE" | cut -c1-10 > "$OUT/filemode"; ` +
+		`: > "$OUT/ready"; ` + tail
 	return []string{envProgram, "OUT=" + out, "sh", "-c", body}
 }
 
@@ -175,21 +179,27 @@ func TestRun_SIGINTCleansUp(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- runRun(runCmd, childScript(out, "exec sleep 30")) }()
 
-	// Wait until the child has recorded the run dir, then interrupt ourselves.
-	// The runner has signal.Notify installed, so the process does not die; it
-	// forwards SIGINT to the child (now `sleep`, thanks to exec), Wait returns,
-	// and runRun's deferred cleanup runs.
+	// Wait for the "ready" marker, written after every pipeline in the child
+	// script by a plain redirection, before interrupting ourselves. sh (the
+	// child before it execs into sleep) swallows a SIGINT that arrives while
+	// it is still waiting on a pipeline's children (cut), even though an
+	// earlier pipeline stage already wrote its own output file; the script
+	// simply continues to `exec sleep 30` with the signal consumed. Waiting
+	// for "ready" closes that window. The runner has signal.Notify installed,
+	// so the process does not die on SIGINT; it forwards SIGINT to the child
+	// (now `sleep`, thanks to exec), Wait returns, and runRun's deferred
+	// cleanup runs.
 	require.Eventually(t, func() bool {
-		_, err := os.Stat(filepath.Join(out, "filemode"))
+		_, err := os.Stat(filepath.Join(out, "ready"))
 		return err == nil
 	}, 10*time.Second, 20*time.Millisecond)
 
-	// Delivering a signal to our own process is best-effort: under heavy CPU
-	// contention (e.g. the whole suite running in parallel) the OS can take
-	// a while to schedule the runtime's signal-handling goroutine, and one
-	// kill(2) call is occasionally never dispatched to the listener at all.
-	// Resending is safe because the child only needs to observe one SIGINT
-	// to exit, so retry on a short interval until the run completes.
+	// The resend loop below is defense in depth for any scheduling delay
+	// still left after closing the readiness race: under heavy CPU
+	// contention the OS can take a while to schedule the runtime's
+	// signal-handling goroutine. Resending is safe because the child only
+	// needs to observe one SIGINT to exit, so retry on a short interval
+	// until the run completes.
 	retry := time.NewTicker(500 * time.Millisecond)
 	defer retry.Stop()
 	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGINT))
