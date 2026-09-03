@@ -16,33 +16,49 @@ import (
 
 func boolPtr(v bool) *bool { return &v }
 
+// Fixture values shared by the builder tests.
+const (
+	envDev          = "dev"
+	envStaging      = "staging"
+	appAPI          = "api"
+	secretAppDev    = "my-app/dev"
+	secretShared    = "shared/common"
+	keyAPIKey       = "api_key"
+	varDBHost       = "DB_HOST"
+	varAPIKey       = "API_KEY"
+	descDevelopment = "Development"
+	vaultDev        = "Dev"
+	itemMyAppDev    = "My App Dev"
+	regionUSEast1   = "us-east-1"
+)
+
 func TestBuilder_Build_LegacyMode_IncludeAll(t *testing.T) {
 	ctx := t.Context()
 	mockClient := mocks.NewMockClient(t)
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(true),
 		Environments: map[string]config.Environment{
-			"dev": config.NewEnvironment(config.IncludeEntry{Secret: "my-app/dev"}),
+			envDev: config.NewEnvironment(config.IncludeEntry{Secret: secretAppDev}),
 		},
 	}
 
-	mockClient.On("GetSecret", mock.Anything, "my-app/dev").Return(map[string]string{
-		"DB_HOST":     "localhost",
+	mockClient.On("GetSecret", mock.Anything, secretAppDev).Return(map[string]string{
+		varDBHost:     "localhost",
 		"DB_USER":     "admin",
 		"DB_PASSWORD": "secret123",
 	}, nil)
 
-	builder := NewBuilder(mockClient, cfg, "", "dev")
+	builder := NewBuilder(mockClient, cfg, "", envDev)
 	entries, err := builder.Build(ctx, nil)
 
 	require.NoError(t, err)
 	assert.Len(t, entries, 3)
 
 	entryMap := ToMap(entries)
-	assert.Equal(t, "localhost", entryMap["DB_HOST"])
+	assert.Equal(t, "localhost", entryMap[varDBHost])
 	assert.Equal(t, "admin", entryMap["DB_USER"])
 	assert.Equal(t, "secret123", entryMap["DB_PASSWORD"])
 }
@@ -53,20 +69,20 @@ func TestBuilder_Build_LegacyMode_MappingsOnly(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
 		Environments: map[string]config.Environment{
-			"dev": config.NewEnvironment(config.IncludeEntry{Secret: "my-app/dev"}),
+			envDev: config.NewEnvironment(config.IncludeEntry{Secret: secretAppDev}),
 		},
 		Mapping: map[string]string{
 			"DATABASE_URL": "my-app/dev#connection_string",
 		},
 	}
 
-	mockClient.On("GetSecretKey", mock.Anything, "my-app/dev", "connection_string").
+	mockClient.On("GetSecretKey", mock.Anything, secretAppDev, "connection_string").
 		Return("postgres://localhost:5432/mydb", nil)
 
-	builder := NewBuilder(mockClient, cfg, "", "dev")
+	builder := NewBuilder(mockClient, cfg, "", envDev)
 	entries, err := builder.Build(ctx, nil)
 
 	require.NoError(t, err)
@@ -83,25 +99,25 @@ func TestBuilder_Build_WithSources_SpecificKey(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
 		Environments: map[string]config.Environment{
-			"dev": {
+			envDev: {
 				Sources: []config.IncludeEntry{
-					{Secret: "my-app/dev"},
-					{Secret: "shared/datadog", Key: "api_key", As: "DD_API_KEY"},
+					{Secret: secretAppDev},
+					{Secret: "shared/datadog", Key: keyAPIKey, As: "DD_API_KEY"},
 					{Secret: "shared/stripe", Key: "secret_key"},
 				},
 			},
 		},
 	}
 
-	mockClient.On("GetSecretKey", mock.Anything, "shared/datadog", "api_key").
+	mockClient.On("GetSecretKey", mock.Anything, "shared/datadog", keyAPIKey).
 		Return("dd-api-key-12345", nil)
 	mockClient.On("GetSecretKey", mock.Anything, "shared/stripe", "secret_key").
 		Return("sk_live_12345", nil)
 
-	builder := NewBuilder(mockClient, cfg, "", "dev")
+	builder := NewBuilder(mockClient, cfg, "", envDev)
 	entries, err := builder.Build(ctx, nil)
 
 	require.NoError(t, err)
@@ -119,28 +135,28 @@ func TestBuilder_Build_WithSources_AllKeys(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(true),
 		Environments: map[string]config.Environment{
-			"dev": {
+			envDev: {
 				Sources: []config.IncludeEntry{
-					{Secret: "my-app/dev"},
-					{Secret: "shared/common"}, // No key specified - includes all
+					{Secret: secretAppDev},
+					{Secret: secretShared}, // No key specified - includes all
 				},
 			},
 		},
 	}
 
-	mockClient.On("GetSecret", mock.Anything, "my-app/dev").Return(map[string]string{
+	mockClient.On("GetSecret", mock.Anything, secretAppDev).Return(map[string]string{
 		"APP_SECRET": "app-secret-value",
 	}, nil)
 
-	mockClient.On("GetSecret", mock.Anything, "shared/common").Return(map[string]string{
+	mockClient.On("GetSecret", mock.Anything, secretShared).Return(map[string]string{
 		"LOG_LEVEL": "debug",
 		"NODE_ENV":  "development",
 	}, nil)
 
-	builder := NewBuilder(mockClient, cfg, "", "dev")
+	builder := NewBuilder(mockClient, cfg, "", envDev)
 	entries, err := builder.Build(ctx, nil)
 
 	require.NoError(t, err)
@@ -159,25 +175,25 @@ func TestBuilder_Build_SourceWithoutKey_RequiresIncludeAll(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
 		Environments: map[string]config.Environment{
-			"dev": {
+			envDev: {
 				Sources: []config.IncludeEntry{
-					{Secret: "my-app/dev"},
-					{Secret: "shared/common"}, // No key - should fail
+					{Secret: secretAppDev},
+					{Secret: secretShared}, // No key - should fail
 				},
 			},
 		},
 	}
 
-	builder := NewBuilder(mockClient, cfg, "", "dev")
+	builder := NewBuilder(mockClient, cfg, "", envDev)
 	_, err := builder.Build(ctx, nil)
 
 	require.Error(t, err)
 	var includeErr *errors.IncludeAllRequiredError
 	require.ErrorAs(t, err, &includeErr)
-	assert.Equal(t, "shared/common", includeErr.Secret)
+	assert.Equal(t, secretShared, includeErr.Secret)
 }
 
 func TestBuilder_Build_WithOverrides(t *testing.T) {
@@ -186,21 +202,21 @@ func TestBuilder_Build_WithOverrides(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(true),
 		Environments: map[string]config.Environment{
-			"dev": config.NewEnvironment(config.IncludeEntry{Secret: "my-app/dev"}),
+			envDev: config.NewEnvironment(config.IncludeEntry{Secret: secretAppDev}),
 		},
 	}
 
-	mockClient.On("GetSecret", mock.Anything, "my-app/dev").Return(map[string]string{
-		"DB_HOST": "from-secret",
+	mockClient.On("GetSecret", mock.Anything, secretAppDev).Return(map[string]string{
+		varDBHost: "from-secret",
 		"DB_PORT": "5432",
 	}, nil)
 
-	builder := NewBuilder(mockClient, cfg, "", "dev")
+	builder := NewBuilder(mockClient, cfg, "", envDev)
 	entries, err := builder.Build(ctx, map[string]string{
-		"DB_HOST": "override-host",
+		varDBHost: "override-host",
 		"NEW_VAR": "new-value",
 	})
 
@@ -208,7 +224,7 @@ func TestBuilder_Build_WithOverrides(t *testing.T) {
 	assert.Len(t, entries, 3)
 
 	entryMap := ToMap(entries)
-	assert.Equal(t, "override-host", entryMap["DB_HOST"])
+	assert.Equal(t, "override-host", entryMap[varDBHost])
 	assert.Equal(t, "5432", entryMap["DB_PORT"])
 	assert.Equal(t, "new-value", entryMap["NEW_VAR"])
 }
@@ -219,18 +235,18 @@ func TestBuilder_Build_CLIIncludeAllOverride(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
 		Environments: map[string]config.Environment{
-			"dev": config.NewEnvironment(config.IncludeEntry{Secret: "my-app/dev"}),
+			envDev: config.NewEnvironment(config.IncludeEntry{Secret: secretAppDev}),
 		},
 	}
 
-	mockClient.On("GetSecret", mock.Anything, "my-app/dev").Return(map[string]string{
+	mockClient.On("GetSecret", mock.Anything, secretAppDev).Return(map[string]string{
 		"SECRET_KEY": "value",
 	}, nil)
 
-	builder := NewBuilder(mockClient, cfg, "", "dev").
+	builder := NewBuilder(mockClient, cfg, "", envDev).
 		WithIncludeAll(boolPtr(true))
 
 	entries, err := builder.Build(ctx, nil)
@@ -247,11 +263,11 @@ func TestBuilder_Build_ApplicationMode(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultApplication: "api",
+		DefaultApplication: appAPI,
 		Applications: map[string]*config.Application{
-			"api": {
+			appAPI: {
 				Environments: map[string]config.Environment{
-					"dev": config.NewEnvironment(config.IncludeEntry{Secret: "api/dev"}),
+					envDev: config.NewEnvironment(config.IncludeEntry{Secret: "api/dev"}),
 				},
 				IncludeAll: boolPtr(true),
 			},
@@ -259,16 +275,16 @@ func TestBuilder_Build_ApplicationMode(t *testing.T) {
 	}
 
 	mockClient.On("GetSecret", mock.Anything, "api/dev").Return(map[string]string{
-		"API_KEY": "api-key-value",
+		varAPIKey: "api-key-value",
 	}, nil)
 
-	builder := NewBuilder(mockClient, cfg, "api", "dev")
+	builder := NewBuilder(mockClient, cfg, appAPI, envDev)
 	entries, err := builder.Build(ctx, nil)
 
 	require.NoError(t, err)
 	assert.Len(t, entries, 1)
 	entryMap := ToMap(entries)
-	assert.Equal(t, "api-key-value", entryMap["API_KEY"])
+	assert.Equal(t, "api-key-value", entryMap[varAPIKey])
 }
 
 func TestBuilder_Build_ErrorFromSecretClient(t *testing.T) {
@@ -277,17 +293,17 @@ func TestBuilder_Build_ErrorFromSecretClient(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(true),
 		Environments: map[string]config.Environment{
-			"dev": config.NewEnvironment(config.IncludeEntry{Secret: "my-app/dev"}),
+			envDev: config.NewEnvironment(config.IncludeEntry{Secret: secretAppDev}),
 		},
 	}
 
-	expectedErr := &errors.SecretNotFoundError{SecretName: "my-app/dev"}
-	mockClient.On("GetSecret", mock.Anything, "my-app/dev").Return(nil, expectedErr)
+	expectedErr := &errors.SecretNotFoundError{SecretName: secretAppDev}
+	mockClient.On("GetSecret", mock.Anything, secretAppDev).Return(nil, expectedErr)
 
-	builder := NewBuilder(mockClient, cfg, "", "dev")
+	builder := NewBuilder(mockClient, cfg, "", envDev)
 	_, err := builder.Build(ctx, nil)
 
 	require.Error(t, err)
@@ -300,13 +316,13 @@ func TestBuilder_Build_ApplicationMode_1PassBackend(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultApplication: "api",
+		DefaultApplication: appAPI,
 		Applications: map[string]*config.Application{
-			"api": {
+			appAPI: {
 				Environments: map[string]config.Environment{
 					"local": config.NewEnvironment(config.IncludeEntry{
 						Secret:  "My App Local",
-						OnePass: &config.OnePassConfig{Vault: "Development"},
+						OnePass: &config.OnePassConfig{Vault: descDevelopment},
 					}),
 				},
 				IncludeAll: boolPtr(true),
@@ -315,16 +331,16 @@ func TestBuilder_Build_ApplicationMode_1PassBackend(t *testing.T) {
 	}
 
 	mockClient.On("GetSecret", mock.Anything, "My App Local").Return(map[string]string{
-		"API_KEY": "local-key",
+		varAPIKey: "local-key",
 	}, nil)
 
-	builder := NewBuilder(mockClient, cfg, "api", "local")
+	builder := NewBuilder(mockClient, cfg, appAPI, "local")
 	entries, err := builder.Build(ctx, nil)
 
 	require.NoError(t, err)
 	assert.Len(t, entries, 1)
 	entryMap := ToMap(entries)
-	assert.Equal(t, "local-key", entryMap["API_KEY"])
+	assert.Equal(t, "local-key", entryMap[varAPIKey])
 }
 
 func TestBuilder_Build_LegacyMode_AWSConfig(t *testing.T) {
@@ -333,46 +349,46 @@ func TestBuilder_Build_LegacyMode_AWSConfig(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "staging",
+		DefaultEnvironment: envStaging,
 		IncludeAll:         boolPtr(true),
 		Environments: map[string]config.Environment{
-			"staging": config.NewEnvironment(config.IncludeEntry{
+			envStaging: config.NewEnvironment(config.IncludeEntry{
 				Secret: "myapp/staging",
-				AWS:    &config.AWSConfig{Region: "us-west-2", Profile: "staging"},
+				AWS:    &config.AWSConfig{Region: "us-west-2", Profile: envStaging},
 			}),
 		},
 	}
 
 	mockClient.On("GetSecret", mock.Anything, "myapp/staging").Return(map[string]string{
-		"DB_HOST": "staging-db.example.com",
+		varDBHost: "staging-db.example.com",
 	}, nil)
 
-	builder := NewBuilder(mockClient, cfg, "", "staging")
+	builder := NewBuilder(mockClient, cfg, "", envStaging)
 	entries, err := builder.Build(ctx, nil)
 
 	require.NoError(t, err)
 	assert.Len(t, entries, 1)
 	entryMap := ToMap(entries)
-	assert.Equal(t, "staging-db.example.com", entryMap["DB_HOST"])
+	assert.Equal(t, "staging-db.example.com", entryMap[varDBHost])
 }
 
 func TestBuilder_Build_SourcesOnlyProcessActiveEnv(t *testing.T) {
-	// Building for "dev" should only process dev sources, not staging
+	// Building for envDev should only process dev sources, not staging
 	ctx := t.Context()
 	mockClient := mocks.NewMockClient(t)
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
 		Environments: map[string]config.Environment{
-			"dev": {
+			envDev: {
 				Sources: []config.IncludeEntry{
-					{Secret: "my-app/dev"},
-					{Secret: "shared/dev-tools", Key: "api_key", As: "DEV_API_KEY"},
+					{Secret: secretAppDev},
+					{Secret: "shared/dev-tools", Key: keyAPIKey, As: "DEV_API_KEY"},
 				},
 			},
-			"staging": {
+			envStaging: {
 				Sources: []config.IncludeEntry{
 					{Secret: "my-app/staging"},
 					{Secret: "shared/staging-monitor", Key: "token", As: "MONITOR_TOKEN"},
@@ -382,10 +398,10 @@ func TestBuilder_Build_SourcesOnlyProcessActiveEnv(t *testing.T) {
 	}
 
 	// Only dev sources should be called
-	mockClient.On("GetSecretKey", mock.Anything, "shared/dev-tools", "api_key").
+	mockClient.On("GetSecretKey", mock.Anything, "shared/dev-tools", keyAPIKey).
 		Return("dev-key-123", nil)
 
-	builder := NewBuilder(mockClient, cfg, "", "dev")
+	builder := NewBuilder(mockClient, cfg, "", envDev)
 	entries, err := builder.Build(ctx, nil)
 
 	require.NoError(t, err)
@@ -406,35 +422,35 @@ func TestBuilder_Build_CrossBackendSource(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
-		OnePass:            &config.OnePassConfig{Vault: "Dev"},
+		OnePass:            &config.OnePassConfig{Vault: vaultDev},
 		Environments: map[string]config.Environment{
-			"dev": {
+			envDev: {
 				Sources: []config.IncludeEntry{
-					{Secret: "My App Dev", OnePass: &config.OnePassConfig{Vault: "Development"}},
+					{Secret: itemMyAppDev, OnePass: &config.OnePassConfig{Vault: descDevelopment}},
 					{
 						Secret: "aws-shared/datadog",
-						Key:    "api_key",
+						Key:    keyAPIKey,
 						As:     "DD_API_KEY",
-						AWS:    &config.AWSConfig{Region: "us-east-1"},
+						AWS:    &config.AWSConfig{Region: regionUSEast1},
 					},
 				},
-				OnePass: &config.OnePassConfig{Vault: "Development"},
+				OnePass: &config.OnePassConfig{Vault: descDevelopment},
 			},
 		},
 	}
 
-	awsClient.On("GetSecretKey", mock.Anything, "aws-shared/datadog", "api_key").
+	awsClient.On("GetSecretKey", mock.Anything, "aws-shared/datadog", keyAPIKey).
 		Return("dd-key-from-aws", nil)
 
-	builder := NewBuilder(primaryClient, cfg, "", "dev")
+	builder := NewBuilder(primaryClient, cfg, "", envDev)
 	builder.newClient = func(
 		_ context.Context, opts secrets.Options,
 	) (secrets.Client, error) {
 		assert.NotNil(t, opts.Env)
 		assert.NotNil(t, opts.Env.AWS)
-		assert.Equal(t, "us-east-1", opts.Env.AWS.Region)
+		assert.Equal(t, regionUSEast1, opts.Env.AWS.Region)
 		return awsClient, nil
 	}
 
@@ -454,23 +470,23 @@ func TestBuilder_Build_SourceWithoutBackendQualifier(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
 		Environments: map[string]config.Environment{
-			"dev": {
+			envDev: {
 				Sources: []config.IncludeEntry{
-					{Secret: "my-app/dev"},
-					{Secret: "shared/common", Key: "api_key", As: "COMMON_API_KEY"},
+					{Secret: secretAppDev},
+					{Secret: secretShared, Key: keyAPIKey, As: "COMMON_API_KEY"},
 				},
 			},
 		},
 	}
 
-	primaryClient.On("GetSecretKey", mock.Anything, "shared/common", "api_key").
+	primaryClient.On("GetSecretKey", mock.Anything, secretShared, keyAPIKey).
 		Return("common-key-value", nil)
 
 	newClientCalled := false
-	builder := NewBuilder(primaryClient, cfg, "", "dev")
+	builder := NewBuilder(primaryClient, cfg, "", envDev)
 	builder.newClient = func(
 		_ context.Context, _ secrets.Options,
 	) (secrets.Client, error) {
@@ -495,12 +511,12 @@ func TestBuilder_Build_SourceWithKeys(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
 		Environments: map[string]config.Environment{
-			"dev": {
+			envDev: {
 				Sources: []config.IncludeEntry{
-					{Secret: "my-app/dev"},
+					{Secret: secretAppDev},
 					{
 						Secret: "shared/database",
 						Keys: []config.KeyMapping{
@@ -521,7 +537,7 @@ func TestBuilder_Build_SourceWithKeys(t *testing.T) {
 	mockClient.On("GetSecretKey", mock.Anything, "shared/database", "database_name").
 		Return("mydb", nil)
 
-	builder := NewBuilder(mockClient, cfg, "", "dev")
+	builder := NewBuilder(mockClient, cfg, "", envDev)
 	entries, err := builder.Build(ctx, nil)
 
 	require.NoError(t, err)
@@ -541,23 +557,23 @@ func TestBuilder_Build_SourceWithKeysCrossBackend(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
-		OnePass:            &config.OnePassConfig{Vault: "Dev"},
+		OnePass:            &config.OnePassConfig{Vault: vaultDev},
 		Environments: map[string]config.Environment{
-			"dev": {
+			envDev: {
 				Sources: []config.IncludeEntry{
-					{Secret: "My App Dev", OnePass: &config.OnePassConfig{Vault: "Development"}},
+					{Secret: itemMyAppDev, OnePass: &config.OnePassConfig{Vault: descDevelopment}},
 					{
 						Secret: "dev/app/secrets",
-						AWS:    &config.AWSConfig{Region: "us-east-1"},
+						AWS:    &config.AWSConfig{Region: regionUSEast1},
 						Keys: []config.KeyMapping{
 							{Key: "database_host", As: "DATABASE_HOST"},
 							{Key: "database_password", As: "DATABASE_PASSWORD"},
 						},
 					},
 				},
-				OnePass: &config.OnePassConfig{Vault: "Development"},
+				OnePass: &config.OnePassConfig{Vault: descDevelopment},
 			},
 		},
 	}
@@ -567,13 +583,13 @@ func TestBuilder_Build_SourceWithKeysCrossBackend(t *testing.T) {
 	awsClient.On("GetSecretKey", mock.Anything, "dev/app/secrets", "database_password").
 		Return("aws-db-pass", nil)
 
-	builder := NewBuilder(primaryClient, cfg, "", "dev")
+	builder := NewBuilder(primaryClient, cfg, "", envDev)
 	builder.newClient = func(
 		_ context.Context, opts secrets.Options,
 	) (secrets.Client, error) {
 		assert.NotNil(t, opts.Env)
 		assert.NotNil(t, opts.Env.AWS)
-		assert.Equal(t, "us-east-1", opts.Env.AWS.Region)
+		assert.Equal(t, regionUSEast1, opts.Env.AWS.Region)
 		return awsClient, nil
 	}
 
@@ -594,12 +610,12 @@ func TestBuilder_Build_SourceWithKeysAsOptional(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
 		Environments: map[string]config.Environment{
-			"dev": {
+			envDev: {
 				Sources: []config.IncludeEntry{
-					{Secret: "my-app/dev"},
+					{Secret: secretAppDev},
 					{
 						Secret: "shared/config",
 						Keys: []config.KeyMapping{
@@ -617,7 +633,7 @@ func TestBuilder_Build_SourceWithKeysAsOptional(t *testing.T) {
 	mockClient.On("GetSecretKey", mock.Anything, "shared/config", "api_url").
 		Return("https://api.example.com", nil)
 
-	builder := NewBuilder(mockClient, cfg, "", "dev")
+	builder := NewBuilder(mockClient, cfg, "", envDev)
 	entries, err := builder.Build(ctx, nil)
 
 	require.NoError(t, err)
@@ -636,29 +652,29 @@ func TestBuilder_Build_BackendFieldAWS(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
-		OnePass:            &config.OnePassConfig{Vault: "Dev"},
+		OnePass:            &config.OnePassConfig{Vault: vaultDev},
 		Environments: map[string]config.Environment{
-			"dev": {
+			envDev: {
 				Sources: []config.IncludeEntry{
-					{Secret: "My App Dev", OnePass: &config.OnePassConfig{Vault: "Development"}},
+					{Secret: itemMyAppDev, OnePass: &config.OnePassConfig{Vault: descDevelopment}},
 					{
 						Secret:  "dev/app/secrets",
 						Backend: config.BackendAWS,
-						Key:     "api_key",
-						As:      "API_KEY",
+						Key:     keyAPIKey,
+						As:      varAPIKey,
 					},
 				},
-				OnePass: &config.OnePassConfig{Vault: "Development"},
+				OnePass: &config.OnePassConfig{Vault: descDevelopment},
 			},
 		},
 	}
 
-	awsClient.On("GetSecretKey", mock.Anything, "dev/app/secrets", "api_key").
+	awsClient.On("GetSecretKey", mock.Anything, "dev/app/secrets", keyAPIKey).
 		Return("aws-api-key", nil)
 
-	builder := NewBuilder(primaryClient, cfg, "", "dev")
+	builder := NewBuilder(primaryClient, cfg, "", envDev)
 	builder.newClient = func(
 		_ context.Context, opts secrets.Options,
 	) (secrets.Client, error) {
@@ -672,7 +688,7 @@ func TestBuilder_Build_BackendFieldAWS(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, entries, 1)
 	entryMap := ToMap(entries)
-	assert.Equal(t, "aws-api-key", entryMap["API_KEY"])
+	assert.Equal(t, "aws-api-key", entryMap[varAPIKey])
 }
 
 func TestBuilder_Build_BackendField1Pass(t *testing.T) {
@@ -683,29 +699,29 @@ func TestBuilder_Build_BackendField1Pass(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
-		AWS:                &config.AWSConfig{Region: "us-east-1"},
+		AWS:                &config.AWSConfig{Region: regionUSEast1},
 		Environments: map[string]config.Environment{
-			"dev": {
+			envDev: {
 				Sources: []config.IncludeEntry{
-					{Secret: "myapp/dev", AWS: &config.AWSConfig{Region: "us-east-1"}},
+					{Secret: "myapp/dev", AWS: &config.AWSConfig{Region: regionUSEast1}},
 					{
 						Secret:  "My Shared Secret",
 						Backend: config.Backend1Pass,
-						Key:     "api_key",
+						Key:     keyAPIKey,
 						As:      "SHARED_KEY",
 					},
 				},
-				AWS: &config.AWSConfig{Region: "us-east-1"},
+				AWS: &config.AWSConfig{Region: regionUSEast1},
 			},
 		},
 	}
 
-	onepassClient.On("GetSecretKey", mock.Anything, "My Shared Secret", "api_key").
+	onepassClient.On("GetSecretKey", mock.Anything, "My Shared Secret", keyAPIKey).
 		Return("1pass-shared-key", nil)
 
-	builder := NewBuilder(primaryClient, cfg, "", "dev")
+	builder := NewBuilder(primaryClient, cfg, "", envDev)
 	builder.newClient = func(
 		_ context.Context, opts secrets.Options,
 	) (secrets.Client, error) {
@@ -729,23 +745,23 @@ func TestBuilder_Build_NoBackendFieldUsesPrimaryClient(t *testing.T) {
 
 	cfg := &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(false),
 		Environments: map[string]config.Environment{
-			"dev": {
+			envDev: {
 				Sources: []config.IncludeEntry{
-					{Secret: "my-app/dev"},
-					{Secret: "shared/common", Key: "token", As: "TOKEN"},
+					{Secret: secretAppDev},
+					{Secret: secretShared, Key: "token", As: "TOKEN"},
 				},
 			},
 		},
 	}
 
-	primaryClient.On("GetSecretKey", mock.Anything, "shared/common", "token").
+	primaryClient.On("GetSecretKey", mock.Anything, secretShared, "token").
 		Return("primary-token", nil)
 
 	newClientCalled := false
-	builder := NewBuilder(primaryClient, cfg, "", "dev")
+	builder := NewBuilder(primaryClient, cfg, "", envDev)
 	builder.newClient = func(
 		_ context.Context, _ secrets.Options,
 	) (secrets.Client, error) {
@@ -795,10 +811,10 @@ const (
 func fileSinkConfig(sources ...config.IncludeEntry) *config.Config {
 	return &config.Config{
 		Version:            1,
-		DefaultEnvironment: "dev",
+		DefaultEnvironment: envDev,
 		IncludeAll:         boolPtr(true),
 		Environments: map[string]config.Environment{
-			"dev": config.NewEnvironment(sources...),
+			envDev: config.NewEnvironment(sources...),
 		},
 	}
 }
@@ -817,7 +833,7 @@ func TestBuildWithFiles_RawContentForKeylessSink(t *testing.T) {
 	pem := []byte("-----BEGIN PRIVATE KEY-----\nxyz\n")
 	client.Raw.On("GetSecretRaw", mock.Anything, sinkKeySecret).Return(pem, nil)
 
-	res, err := NewBuilder(client, cfg, "", "dev").BuildWithFiles(ctx, nil)
+	res, err := NewBuilder(client, cfg, "", envDev).BuildWithFiles(ctx, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, map[string]string{"A": "1"}, ToMap(res.Entries), "sink content must not appear in entries")
@@ -841,7 +857,7 @@ func TestBuildWithFiles_KeyedSinkUsesGetSecretKey(t *testing.T) {
 	client.Client.On("GetSecret", mock.Anything, sinkPrimarySecret).Return(map[string]string{}, nil)
 	client.Client.On("GetSecretKey", mock.Anything, "app/dev/bundle", "kubeconfig").Return("apiVersion: v1\n", nil)
 
-	res, err := NewBuilder(client, cfg, "", "dev").BuildWithFiles(ctx, nil)
+	res, err := NewBuilder(client, cfg, "", envDev).BuildWithFiles(ctx, nil)
 	require.NoError(t, err)
 	assert.Empty(t, res.Entries, "keyed sink content must not become an env var")
 	require.Len(t, res.Files, 1)
@@ -859,7 +875,7 @@ func TestBuildWithFiles_KeylessSinkWithoutRawReaderErrors(t *testing.T) {
 	client.On("GetSecret", mock.Anything, sinkPrimarySecret).Return(map[string]string{}, nil)
 	client.On("Name").Return("1password")
 
-	_, err := NewBuilder(client, cfg, "", "dev").BuildWithFiles(ctx, nil)
+	_, err := NewBuilder(client, cfg, "", envDev).BuildWithFiles(ctx, nil)
 	require.Error(t, err)
 	var want *errors.FileSinkKeyRequiredError
 	require.ErrorAs(t, err, &want)
@@ -880,7 +896,7 @@ func TestBuild_NeverFetchesSinkContent(t *testing.T) {
 	client.Client.On("GetSecret", mock.Anything, sinkPrimarySecret).Return(map[string]string{"A": "1"}, nil)
 	// No GetSecretRaw expectation: a call would fail the mock.
 
-	entries, err := NewBuilder(client, cfg, "", "dev").Build(ctx, nil)
+	entries, err := NewBuilder(client, cfg, "", envDev).Build(ctx, nil)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"A": "1"}, ToMap(entries))
 }
@@ -893,7 +909,7 @@ func TestBuildWithFiles_PrimarySourceCanBeSink(t *testing.T) {
 	)
 	client.Raw.On("GetSecretRaw", mock.Anything, "app/dev/only_key").Return([]byte("k"), nil)
 
-	res, err := NewBuilder(client, cfg, "", "dev").BuildWithFiles(ctx, nil)
+	res, err := NewBuilder(client, cfg, "", envDev).BuildWithFiles(ctx, nil)
 	require.NoError(t, err)
 	assert.Empty(t, res.Entries, "include_all must not dump a sink primary into the environment")
 	require.Len(t, res.Files, 1)
@@ -913,7 +929,7 @@ func TestBuildWithFiles_IncludeAllFalseDoesNotRequireKeyForSink(t *testing.T) {
 	client.Client.On("GetSecretKey", mock.Anything, sinkPrimarySecret, "A").Return("1", nil)
 	client.Raw.On("GetSecretRaw", mock.Anything, sinkKeySecret).Return([]byte("pem"), nil)
 
-	res, err := NewBuilder(client, cfg, "", "dev").BuildWithFiles(ctx, nil)
+	res, err := NewBuilder(client, cfg, "", envDev).BuildWithFiles(ctx, nil)
 	require.NoError(t, err, "a sink source without key must not trip IncludeAllRequiredError")
 	assert.Equal(t, map[string]string{"A": "1"}, ToMap(res.Entries))
 	require.Len(t, res.Files, 1)
@@ -930,7 +946,7 @@ func TestBuildWithFiles_FetchErrorPropagates(t *testing.T) {
 	client.Raw.On("GetSecretRaw", mock.Anything, "app/dev/missing").
 		Return(nil, &errors.SecretNotFoundError{SecretName: "app/dev/missing"})
 
-	_, err := NewBuilder(client, cfg, "", "dev").BuildWithFiles(ctx, nil)
+	_, err := NewBuilder(client, cfg, "", envDev).BuildWithFiles(ctx, nil)
 	require.Error(t, err)
 	var nf *errors.SecretNotFoundError
 	assert.ErrorAs(t, err, &nf)
@@ -951,7 +967,7 @@ func TestBuildWithFiles_BackendQualifiedSinkUsesOwnClient(t *testing.T) {
 	primary.On("GetSecretKey", mock.Anything, "op://vault/item", "A").Return("1", nil)
 	awsClient.Raw.On("GetSecretRaw", mock.Anything, "dev/app/sp_key").Return([]byte("pem"), nil)
 
-	b := NewBuilder(primary, cfg, "", "dev")
+	b := NewBuilder(primary, cfg, "", envDev)
 	var gotOpts secrets.Options
 	b.newClient = func(_ context.Context, opts secrets.Options) (secrets.Client, error) {
 		gotOpts = opts
