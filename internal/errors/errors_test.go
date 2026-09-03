@@ -9,6 +9,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Fixture values shared by the error type tests.
+const (
+	testSecretName  = "my-secret"
+	testOperation   = "GetSecretValue"
+	testEmptySecret = "empty-secret"
+	testAnyKey      = "ANY_KEY"
+)
+
 func TestConfigError_Error(t *testing.T) {
 	tests := []struct {
 		name string
@@ -50,8 +58,8 @@ func TestAWSError_Error(t *testing.T) {
 		{
 			name: "without hint",
 			err: AWSError{
-				SecretName: "my-secret",
-				Operation:  "GetSecretValue",
+				SecretName: testSecretName,
+				Operation:  testOperation,
 				Message:    "access denied",
 			},
 			want: `AWS GetSecretValue failed for "my-secret": access denied`,
@@ -59,8 +67,8 @@ func TestAWSError_Error(t *testing.T) {
 		{
 			name: "with hint",
 			err: AWSError{
-				SecretName: "my-secret",
-				Operation:  "GetSecretValue",
+				SecretName: testSecretName,
+				Operation:  testOperation,
 				Message:    "access denied",
 				Hint:       "Check your IAM permissions",
 			},
@@ -79,7 +87,7 @@ func TestAWSError_Unwrap(t *testing.T) {
 	underlying := errors.New("underlying error")
 	err := &AWSError{
 		SecretName: "test",
-		Operation:  "GetSecretValue",
+		Operation:  testOperation,
 		Message:    "failed",
 		Underlying: underlying,
 	}
@@ -117,29 +125,29 @@ func TestKeyNotFoundError_Error(t *testing.T) {
 		{
 			name: "with available keys",
 			err: KeyNotFoundError{
-				SecretName:    "my-secret",
+				SecretName:    testSecretName,
 				Key:           "DB_PASSWORD",
 				AvailableKeys: []string{"DB_HOST", "DB_USER", "DB_NAME"},
 			},
-			want: []string{"DB_PASSWORD", "my-secret", "DB_HOST", "DB_USER", "DB_NAME"},
+			want: []string{"DB_PASSWORD", testSecretName, "DB_HOST", "DB_USER", "DB_NAME"},
 		},
 		{
 			name: "no available keys",
 			err: KeyNotFoundError{
-				SecretName:    "empty-secret",
-				Key:           "ANY_KEY",
+				SecretName:    testEmptySecret,
+				Key:           testAnyKey,
 				AvailableKeys: nil,
 			},
-			want: []string{"ANY_KEY", "empty-secret", "(none)"},
+			want: []string{testAnyKey, testEmptySecret, "(none)"},
 		},
 		{
 			name: "empty available keys",
 			err: KeyNotFoundError{
-				SecretName:    "empty-secret",
-				Key:           "ANY_KEY",
+				SecretName:    testEmptySecret,
+				Key:           testAnyKey,
 				AvailableKeys: []string{},
 			},
-			want: []string{"ANY_KEY", "empty-secret", "(none)"},
+			want: []string{testAnyKey, testEmptySecret, "(none)"},
 		},
 	}
 

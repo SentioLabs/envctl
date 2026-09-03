@@ -121,7 +121,7 @@ func (e *SecretRefError) Error() string {
 // IncludeAllRequiredError is returned when an include entry doesn't specify a key
 // and include_all is not enabled.
 type IncludeAllRequiredError struct {
-	Secret string //nolint:gosec // G117: field name refers to a secret reference, not credentials
+	Secret string
 }
 
 func (e *IncludeAllRequiredError) Error() string {
