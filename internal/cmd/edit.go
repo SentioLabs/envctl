@@ -4,6 +4,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -52,7 +53,7 @@ func init() {
 // runEdit launches the interactive TUI for browsing and editing secrets.
 func runEdit(cmd *cobra.Command, args []string) error {
 	if editItem != "" && editVault == "" {
-		return fmt.Errorf("--item requires --vault")
+		return errors.New("--item requires --vault")
 	}
 
 	ctx := context.Background()

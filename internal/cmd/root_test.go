@@ -9,13 +9,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testSecretRef is the secret reference used by the fixtures in this file.
+const testSecretRef = "test/secret"
+
 func TestCreateSecretsClientSignature(t *testing.T) {
 	devEnv := config.NewEnvironment(
-		config.IncludeEntry{Secret: "test/secret"},
+		config.IncludeEntry{Secret: testSecretRef},
 	)
 	cfg := &config.Config{
 		Version:      1,
-		Environments: map[string]config.Environment{"dev": devEnv},
+		Environments: map[string]config.Environment{testDevEnv: devEnv},
 	}
 
 	ctx := t.Context()
@@ -26,14 +29,14 @@ func TestCreateSecretsClientSignature(t *testing.T) {
 
 func TestCreateSecretsClientWithEnvironment(t *testing.T) {
 	devEnv := config.NewEnvironment(
-		config.IncludeEntry{Secret: "test/secret"},
+		config.IncludeEntry{Secret: testSecretRef},
 	)
 	cfg := &config.Config{
 		Version:      1,
-		Environments: map[string]config.Environment{"dev": devEnv},
+		Environments: map[string]config.Environment{testDevEnv: devEnv},
 	}
 	env := config.NewEnvironment(config.IncludeEntry{
-		Secret: "test/secret",
+		Secret: testSecretRef,
 		AWS:    &config.AWSConfig{Region: "us-west-2"},
 	})
 	envConfig := &env
@@ -46,11 +49,11 @@ func TestCreateSecretsClientWithEnvironment(t *testing.T) {
 
 func TestCreateSecretsClientUsesResolveBackend(t *testing.T) {
 	devEnv := config.NewEnvironment(
-		config.IncludeEntry{Secret: "test/secret"},
+		config.IncludeEntry{Secret: testSecretRef},
 	)
 	cfg := &config.Config{
 		Version:      1,
-		Environments: map[string]config.Environment{"dev": devEnv},
+		Environments: map[string]config.Environment{testDevEnv: devEnv},
 	}
 
 	env := config.NewEnvironment(config.IncludeEntry{
