@@ -855,3 +855,49 @@ func TestShouldIncludeAll(t *testing.T) {
 		})
 	}
 }
+
+// --- Contract assertions ---
+// These verify the file-sink design contracts. Do NOT modify
+// without updating the approved plan.
+
+//nolint:staticcheck // QF1011: explicit types assert exact field types, not just presence
+func TestFileSinkContract(t *testing.T) {
+	var _ *FileSink = IncludeEntry{}.File
+	var _ string = Application{}.FilesDirAs
+	var _ string = Config{}.FilesDirAs
+
+	f := FileSink{}
+	var _ string = f.Name
+	var _ string = f.Path
+	var _ string = f.Mode
+	var _ string = f.PathAs
+	if f.Persistent() {
+		t.Fatal("empty sink must not be persistent")
+	}
+	mode, err := f.FileMode()
+	if err != nil || mode != 0o600 {
+		t.Fatalf("default mode: got %v, %v", mode, err)
+	}
+	f.Mode = "0644"
+	mode, err = f.FileMode()
+	if err != nil || mode != 0o644 {
+		t.Fatalf("0644 mode: got %v, %v", mode, err)
+	}
+	f.Mode = "abc"
+	if _, err := f.FileMode(); err == nil {
+		t.Fatal("non-octal mode must error")
+	}
+	f.Mode = "1777"
+	if _, err := f.FileMode(); err == nil {
+		t.Fatal("mode above 0777 must error")
+	}
+
+	cfg := &Config{FilesDirAs: "GLOBAL_DIR"}
+	if got := cfg.ResolveFilesDirAs(nil); got != "GLOBAL_DIR" {
+		t.Fatalf("global files_dir_as: got %q", got)
+	}
+	app := &Application{FilesDirAs: "APP_DIR"}
+	if got := cfg.ResolveFilesDirAs(app); got != "APP_DIR" {
+		t.Fatalf("app files_dir_as: got %q", got)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/sentiolabs/envctl/internal/errors"
@@ -35,6 +36,7 @@ type Config struct {
 	DefaultEnvironment string                  `yaml:"default_environment,omitempty"`
 	DefaultBackend     string                  `yaml:"default_backend,omitempty"`
 	IncludeAll         *bool                   `yaml:"include_all,omitempty"`
+	FilesDirAs         string                  `yaml:"files_dir_as,omitempty"`
 	AWS                *AWSConfig              `yaml:"aws,omitempty"`
 	OnePass            *OnePassConfig          `yaml:"1pass,omitempty"`
 	Applications       map[string]*Application `yaml:"applications,omitempty"`
@@ -50,6 +52,7 @@ type Application struct {
 	Environments map[string]Environment `yaml:",inline"`
 	Mapping      map[string]string      `yaml:"mapping,omitempty"`
 	IncludeAll   *bool                  `yaml:"include_all,omitempty"`
+	FilesDirAs   string                 `yaml:"files_dir_as,omitempty"` // env var for the ephemeral run dir
 }
 
 // CacheConfig represents cache configuration.
@@ -171,6 +174,36 @@ type KeyMapping struct {
 	As  string `yaml:"as,omitempty"`
 }
 
+// FileSink materializes a source as a file instead of an environment variable.
+// Exactly one of Name or Path is set. Name places the file in the per-run
+// ephemeral directory. Path writes to an explicit, persistent location.
+//
+//nolint:tagliatelle // Using snake_case for YAML field names is intentional
+type FileSink struct {
+	Name   string `yaml:"name,omitempty"` // ephemeral: bare filename under the run directory
+	Path   string `yaml:"path,omitempty"` // persistent: explicit path, ~ and ${VAR} expanded
+	Mode   string `yaml:"mode,omitempty"` // octal string, default "0600"
+	PathAs string `yaml:"path_as"`        // env var that receives the absolute path
+}
+
+// DefaultFileMode is the mode a file sink gets when mode is unset.
+const DefaultFileMode os.FileMode = 0o600
+
+// Persistent reports whether the sink writes to an explicit path.
+func (f *FileSink) Persistent() bool { return f.Path != "" }
+
+// FileMode returns the parsed mode, defaulting to 0600.
+func (f *FileSink) FileMode() (os.FileMode, error) {
+	if f.Mode == "" {
+		return DefaultFileMode, nil
+	}
+	n, err := strconv.ParseUint(f.Mode, 8, 32)
+	if err != nil || n > 0o777 {
+		return 0, fmt.Errorf("invalid file mode %q (expected octal such as \"0600\")", f.Mode)
+	}
+	return os.FileMode(n), nil
+}
+
 // IncludeEntry represents an additional secret to include.
 type IncludeEntry struct {
 	//nolint:gosec // G117: field name refers to a secret reference, not credentials
@@ -181,6 +214,7 @@ type IncludeEntry struct {
 	Backend string         `yaml:"backend,omitempty"` // "aws" or "1pass": routing hint when no aws:/1pass: block
 	AWS     *AWSConfig     `yaml:"aws,omitempty"`
 	OnePass *OnePassConfig `yaml:"1pass,omitempty"`
+	File    *FileSink      `yaml:"file,omitempty"` // write content to a file instead of the environment
 }
 
 // Load reads and parses a config file from the given path.
@@ -600,4 +634,13 @@ func (c *Config) ShouldIncludeAll(app *Application, env *Environment) bool {
 	}
 	// Default: mappings-only mode
 	return false
+}
+
+// ResolveFilesDirAs returns the files_dir_as variable name with precedence app > global.
+// Returns "" when neither level sets it.
+func (c *Config) ResolveFilesDirAs(app *Application) string {
+	if app != nil && app.FilesDirAs != "" {
+		return app.FilesDirAs
+	}
+	return c.FilesDirAs
 }
