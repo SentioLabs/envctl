@@ -13,16 +13,16 @@ func TestParseSecretRef(t *testing.T) {
 	}{
 		{
 			name:       "secret only",
-			ref:        "myapp/dev",
-			wantSecret: "myapp/dev",
+			ref:        testSecretMyappDev,
+			wantSecret: testSecretMyappDev,
 			wantKey:    "",
 			wantErr:    false,
 		},
 		{
 			name:       "secret with key",
 			ref:        "myapp/dev#DATABASE_URL",
-			wantSecret: "myapp/dev",
-			wantKey:    "DATABASE_URL",
+			wantSecret: testSecretMyappDev,
+			wantKey:    testKeyDatabaseURL,
 			wantErr:    false,
 		},
 		{
@@ -50,8 +50,8 @@ func TestParseSecretRef(t *testing.T) {
 		{
 			name:       "with whitespace",
 			ref:        " myapp/dev # DATABASE_URL ",
-			wantSecret: "myapp/dev",
-			wantKey:    "DATABASE_URL",
+			wantSecret: testSecretMyappDev,
+			wantKey:    testKeyDatabaseURL,
 			wantErr:    false,
 		},
 	}
@@ -91,14 +91,14 @@ func TestSecretRefString(t *testing.T) {
 	}{
 		{
 			name:       "secret only",
-			secretName: "myapp/dev",
+			secretName: testSecretMyappDev,
 			keyName:    "",
-			want:       "myapp/dev",
+			want:       testSecretMyappDev,
 		},
 		{
 			name:       "secret with key",
-			secretName: "myapp/dev",
-			keyName:    "DATABASE_URL",
+			secretName: testSecretMyappDev,
+			keyName:    testKeyDatabaseURL,
 			want:       "myapp/dev#DATABASE_URL",
 		},
 	}

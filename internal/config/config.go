@@ -157,7 +157,7 @@ func (e *Environment) UnmarshalYAML(value *yaml.Node) error {
 		}
 		//nolint:tagliatelle // Using snake_case for YAML field names is intentional
 		var legacy struct {
-			Secret     string         `yaml:"secret"`            //nolint:gosec // G117: refers to secret ref, not creds
+			Secret     string         `yaml:"secret"`
 			Backend    string         `yaml:"backend,omitempty"` // routing hint
 			IncludeAll *bool          `yaml:"include_all,omitempty"`
 			AWS        *AWSConfig     `yaml:"aws,omitempty"`
@@ -233,7 +233,6 @@ func (f *FileSink) FileMode() (os.FileMode, error) {
 
 // IncludeEntry represents an additional secret to include.
 type IncludeEntry struct {
-	//nolint:gosec // G117: field name refers to a secret reference, not credentials
 	Secret  string         `yaml:"secret"`
 	Key     string         `yaml:"key,omitempty"`
 	As      string         `yaml:"as,omitempty"`
