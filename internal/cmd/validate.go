@@ -6,8 +6,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/sentiolabs/envctl/internal/config"
+	"github.com/sentiolabs/envctl/internal/filesink"
 	"github.com/sentiolabs/envctl/internal/secrets"
 	"github.com/spf13/cobra"
 )
@@ -44,13 +46,9 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	// Load config
-	configPath := configFile
-	if configPath == "" {
-		var err error
-		configPath, err = config.FindConfig()
-		if err != nil {
-			return err
-		}
+	configPath, err := resolveConfigPath()
+	if err != nil {
+		return err
 	}
 
 	fmt.Fprintf(os.Stdout, "✓ Config file: %s\n", configPath)
@@ -125,6 +123,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	// Test all sources from the resolved environment
 	totalKeys := 0
 	totalKeys += validateSources(ctx, cfg, client, envConfig.Sources, selectedEnv)
+	totalKeys += validateFileSinks(ctx, cfg, client, envConfig, app, filepath.Dir(configPath))
 
 	// Test global mapping references
 	if len(cfg.Mapping) > 0 {
@@ -160,6 +159,9 @@ func validateSources(
 ) int {
 	totalKeys := 0
 	for _, src := range sources {
+		if src.File != nil {
+			continue // reported by validateFileSinks
+		}
 		client, err := clientForValidate(ctx, cfg, primaryClient, src)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "✗ Source (%s) '%s': failed to create client: %v\n", scope, src.Secret, err)
@@ -203,6 +205,94 @@ func validateSources(
 		}
 	}
 	return totalKeys
+}
+
+// validateFileSinks fetches each file sink and reports its target, mode and
+// size. Content never reaches stdout. Persistent paths are checked against
+// the git check-ignore rule so a refusal shows up here and not at run time.
+//
+//nolint:revive,gocognit // CLI output to stdout always succeeds; one branch per sink kind
+func validateFileSinks(
+	ctx context.Context,
+	cfg *config.Config,
+	primaryClient secrets.Client,
+	envConfig *config.Environment,
+	app *config.Application,
+	configDir string,
+) int {
+	count := 0
+	ephemeral := false
+	for i, src := range envConfig.Sources {
+		if src.File == nil {
+			continue
+		}
+		label := src.File.PathAs
+
+		client := primaryClient
+		if i > 0 {
+			var err error
+			client, err = clientForValidate(ctx, cfg, primaryClient, src)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "✗ File sink %s: failed to create client: %v\n", label, err)
+				continue
+			}
+		}
+
+		var content []byte
+		if src.Key != "" {
+			value, err := client.GetSecretKey(ctx, src.Secret, src.Key)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "✗ File sink %s '%s#%s': %v\n", label, src.Secret, src.Key, err)
+				continue
+			}
+			content = []byte(value)
+		} else {
+			raw, ok := client.(secrets.RawReader)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "✗ File sink %s '%s': backend %s cannot return raw content; set 'key:'\n",
+					label, src.Secret, client.Name())
+				continue
+			}
+			var err error
+			content, err = raw.GetSecretRaw(ctx, src.Secret)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "✗ File sink %s '%s': %v\n", label, src.Secret, err)
+				continue
+			}
+		}
+
+		mode, err := src.File.FileMode()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "✗ File sink %s: %v\n", label, err)
+			continue
+		}
+
+		target := "<run dir>/" + src.File.Name
+		if src.File.Persistent() {
+			abs, err := filesink.Expand(src.File.Path, configDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "✗ File sink %s: %v\n", label, err)
+				continue
+			}
+			if err := filesink.CheckPath(abs); err != nil {
+				fmt.Fprintf(os.Stderr, "✗ File sink %s: %s: %v\n", label, abs, err)
+				continue
+			}
+			target = abs
+		} else {
+			ephemeral = true
+		}
+
+		fmt.Fprintf(os.Stdout, "✓ File sink %s -> %s (%04o, %d bytes)\n", label, target, mode, len(content))
+		clear(content)
+		count++
+	}
+
+	if dirAs := cfg.ResolveFilesDirAs(app); dirAs != "" && ephemeral {
+		fmt.Fprintf(os.Stdout, "✓ Files dir: %s -> <run dir>\n", dirAs)
+		count++
+	}
+	return count
 }
 
 // clientForValidate returns the appropriate secrets client for a source entry.
@@ -257,6 +347,9 @@ func validateMapping(
 func countSpecificSources(sources []config.IncludeEntry) int {
 	count := 0
 	for _, src := range sources {
+		if src.File != nil {
+			continue // reported by validateFileSinks
+		}
 		if src.Key != "" {
 			count++
 		} else if len(src.Keys) > 0 {
@@ -269,6 +362,9 @@ func countSpecificSources(sources []config.IncludeEntry) int {
 // hasWildcardSources checks if any source entry doesn't specify a key or keys.
 func hasWildcardSources(sources []config.IncludeEntry) bool {
 	for _, src := range sources {
+		if src.File != nil {
+			continue // reported by validateFileSinks
+		}
 		if src.Key == "" && len(src.Keys) == 0 {
 			return true
 		}

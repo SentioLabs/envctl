@@ -33,7 +33,10 @@ Example:
   psql "$(envctl get DATABASE_URL)"
 
   # Get from specific secret (bypass config)
-  envctl get --secret myapp/prod#DATABASE_URL`,
+  envctl get --secret myapp/prod#DATABASE_URL
+
+For a file sink with file.path the file is written and its path printed.
+File sinks with file.name are only available under envctl run.`,
 		Args: cobra.ExactArgs(1),
 		RunE: runGet,
 	}

@@ -20,7 +20,10 @@ that read .env files.
 Example:
   envctl env > .env
   envctl env -e staging > .env
-  envctl env -o .env`,
+  envctl env -o .env
+
+Sources with file.path are written and their path_as variables included.
+Sources with file.name are skipped: only envctl run materializes them.`,
 		RunE: runEnv,
 	}
 )
