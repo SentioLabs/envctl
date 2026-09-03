@@ -10,13 +10,19 @@ import (
 	"github.com/sentiolabs/envctl/internal/env"
 )
 
+// Fixture values shared by the formatter tests.
+const (
+	sourceTest = "test"
+	keyZebra   = "ZEBRA"
+)
+
 func TestWriteEnvFormat(t *testing.T) {
 	entries := []env.Entry{
-		{Key: "SIMPLE", Value: "value", Source: "test"},
-		{Key: "WITH_SPACES", Value: "hello world", Source: "test"},
-		{Key: "WITH_QUOTES", Value: `say "hello"`, Source: "test"},
-		{Key: "WITH_NEWLINE", Value: "line1\nline2", Source: "test"},
-		{Key: "EMPTY", Value: "", Source: "test"},
+		{Key: "SIMPLE", Value: "value", Source: sourceTest},
+		{Key: "WITH_SPACES", Value: "hello world", Source: sourceTest},
+		{Key: "WITH_QUOTES", Value: `say "hello"`, Source: sourceTest},
+		{Key: "WITH_NEWLINE", Value: "line1\nline2", Source: sourceTest},
+		{Key: "EMPTY", Value: "", Source: sourceTest},
 	}
 
 	var buf bytes.Buffer
@@ -44,8 +50,8 @@ func TestWriteEnvFormat(t *testing.T) {
 
 func TestWriteShellFormat(t *testing.T) {
 	entries := []env.Entry{
-		{Key: "SIMPLE", Value: "value", Source: "test"},
-		{Key: "WITH_DOLLAR", Value: "$HOME/path", Source: "test"},
+		{Key: "SIMPLE", Value: "value", Source: sourceTest},
+		{Key: "WITH_DOLLAR", Value: "$HOME/path", Source: sourceTest},
 	}
 
 	var buf bytes.Buffer
@@ -67,8 +73,8 @@ func TestWriteShellFormat(t *testing.T) {
 
 func TestWriteJSONFormat(t *testing.T) {
 	entries := []env.Entry{
-		{Key: "KEY1", Value: "value1", Source: "test"},
-		{Key: "KEY2", Value: "value2", Source: "test"},
+		{Key: "KEY1", Value: "value1", Source: sourceTest},
+		{Key: "KEY2", Value: "value2", Source: sourceTest},
 	}
 
 	var buf bytes.Buffer
@@ -160,16 +166,16 @@ func TestParseFormat(t *testing.T) {
 
 func TestSortEntries(t *testing.T) {
 	entries := []env.Entry{
-		{Key: "ZEBRA", Value: "z", Source: "test"},
-		{Key: "APPLE", Value: "a", Source: "test"},
-		{Key: "MANGO", Value: "m", Source: "test"},
-		{Key: "BANANA", Value: "b", Source: "test"},
+		{Key: keyZebra, Value: "z", Source: sourceTest},
+		{Key: "APPLE", Value: "a", Source: sourceTest},
+		{Key: "MANGO", Value: "m", Source: sourceTest},
+		{Key: "BANANA", Value: "b", Source: sourceTest},
 	}
 
 	sorted := sortEntries(entries)
 
 	// Verify sorted order
-	expectedOrder := []string{"APPLE", "BANANA", "MANGO", "ZEBRA"}
+	expectedOrder := []string{"APPLE", "BANANA", "MANGO", keyZebra}
 	for i, key := range expectedOrder {
 		if sorted[i].Key != key {
 			t.Errorf("sortEntries()[%d].Key = %q, want %q", i, sorted[i].Key, key)
@@ -177,7 +183,7 @@ func TestSortEntries(t *testing.T) {
 	}
 
 	// Verify original slice is not modified
-	if entries[0].Key != "ZEBRA" {
+	if entries[0].Key != keyZebra {
 		t.Error("sortEntries() modified the original slice")
 	}
 }
