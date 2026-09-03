@@ -25,6 +25,24 @@ const (
 // concealedPlaceholder is displayed instead of the actual value for concealed fields.
 const concealedPlaceholder = "********"
 
+// Change types recorded in PendingChange.Type.
+const (
+	changeUpdate  = "update"
+	changeDelete  = "delete"
+	changeRename  = "rename"
+	changeSetType = "set_type"
+)
+
+// Layout limits for the field table.
+const (
+	// minFieldRows is the smallest viewport the table ever renders.
+	minFieldRows = 3
+	// halfPageDivisor turns the viewport height into a ctrl-u/ctrl-d jump.
+	halfPageDivisor = 2
+	// maxValueWidth caps the value column so wide secrets don't wrap the table.
+	maxValueWidth = 50
+)
+
 // pendingActionType tracks what to do after a discard confirmation.
 type pendingActionType int
 
@@ -35,7 +53,7 @@ const (
 
 // PendingChange represents a single pending modification to a field.
 type PendingChange struct {
-	Type    string            // "update", "delete", "rename", "set_type"
+	Type    string            // one of changeUpdate, changeDelete, changeRename, changeSetType
 	Field   secrets.Field     // the field being changed
 	OldKey  string            // original key name (for rename)
 	NewType secrets.FieldType // target type (for set_type)
@@ -45,25 +63,25 @@ type PendingChange struct {
 // supports CRUD operations: edit value, rename key, delete, toggle type,
 // and add new fields.
 type FieldEditor struct {
-	fields        []secrets.Field
-	cursor        int
-	mode          editMode
-	input         textinput.Model
-	confirm       Confirm
-	changes       []PendingChange
-	hasTypeEditor bool
-	itemRef       string
-	itemName      string
+	fields          []secrets.Field
+	cursor          int
+	mode            editMode
+	input           textinput.Model
+	confirm         Confirm
+	changes         []PendingChange
+	hasTypeEditor   bool
+	itemRef         string
+	itemName        string
 	newFieldKey     string            // temp storage during new-field flow
 	pendingAction   pendingActionType // what to do after discard confirm
 	filterText      string            // current filter query
 	filteredIndices []int             // indices into fields that match filter
-	revealed        map[int]bool     // field indices with concealed values shown
-	height          int              // terminal height for viewport scrolling
-	viewportOffset  int              // first visible row index
+	revealed        map[int]bool      // field indices with concealed values shown
+	height          int               // terminal height for viewport scrolling
+	viewportOffset  int               // first visible row index
 	back            bool
-	saving        bool
-	quitting      bool
+	saving          bool
+	quitting        bool
 }
 
 // NewFieldEditor creates a new field editor for the given item.
@@ -134,21 +152,21 @@ func (m FieldEditor) fieldCapacity() int {
 	if m.filterText != "" && m.mode != modeFilter {
 		chrome++ // active filter indicator
 	}
-	cap := m.height - chrome
-	if cap < 3 {
-		cap = 3
+	rows := m.height - chrome
+	if rows < minFieldRows {
+		rows = minFieldRows
 	}
-	return cap
+	return rows
 }
 
 // ensureCursorVisible adjusts viewportOffset so the cursor is within the visible window.
 func (m *FieldEditor) ensureCursorVisible() {
-	cap := m.fieldCapacity()
+	rows := m.fieldCapacity()
 	if m.cursor < m.viewportOffset {
 		m.viewportOffset = m.cursor
 	}
-	if m.cursor >= m.viewportOffset+cap {
-		m.viewportOffset = m.cursor - cap + 1
+	if m.cursor >= m.viewportOffset+rows {
+		m.viewportOffset = m.cursor - rows + 1
 	}
 }
 
@@ -179,6 +197,8 @@ func (m FieldEditor) Update(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	}
 }
 
+// updateNormal handles keys while the table has focus and no prompt is open.
+// Navigation keys move the cursor, everything else is delegated by rune.
 func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
@@ -201,7 +221,7 @@ func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		m.ensureCursorVisible()
 	case tea.KeyCtrlU:
 		// Half-page up
-		jump := m.fieldCapacity() / 2
+		jump := m.fieldCapacity() / halfPageDivisor
 		m.cursor -= jump
 		if m.cursor < 0 {
 			m.cursor = 0
@@ -209,7 +229,7 @@ func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		m.ensureCursorVisible()
 	case tea.KeyCtrlD:
 		// Half-page down
-		jump := m.fieldCapacity() / 2
+		jump := m.fieldCapacity() / halfPageDivisor
 		m.cursor += jump
 		if m.cursor >= len(visible) {
 			m.cursor = len(visible) - 1
@@ -238,74 +258,96 @@ func (m FieldEditor) updateNormal(msg tea.Msg) (FieldEditor, tea.Cmd) {
 			return m, m.input.Focus()
 		}
 	case tea.KeyRunes:
-		switch string(keyMsg.Runes) {
-		case "/":
-			m.mode = modeFilter
-			m.input.SetValue(m.filterText)
-			m.input.CursorEnd()
-			return m, m.input.Focus()
-		case "e":
-			if idx >= 0 {
-				m.mode = modeEdit
-				m.input.SetValue(m.fields[idx].Value)
-				m.input.CursorEnd()
-				return m, m.input.Focus()
-			}
-		case "s":
-			if len(m.changes) > 0 {
-				m.saving = true
-			}
-		case "v":
-			if idx >= 0 && m.fields[idx].Type == secrets.FieldConcealed {
-				if m.revealed == nil {
-					m.revealed = make(map[int]bool)
-				}
-				m.revealed[idx] = !m.revealed[idx]
-			}
-		case "d":
-			if idx >= 0 {
-				m.mode = modeConfirmDelete
-				m.confirm = NewConfirm(fmt.Sprintf("Delete %s?", m.fields[idx].Key))
-			}
-		case "r":
-			if idx >= 0 {
-				m.mode = modeRename
-				m.input.SetValue(m.fields[idx].Key)
-				m.input.CursorEnd()
-				return m, m.input.Focus()
-			}
-		case "t":
-			if m.hasTypeEditor && idx >= 0 {
-				field := m.fields[idx]
-				newType := secrets.FieldConcealed
-				if field.Type == secrets.FieldConcealed {
-					newType = secrets.FieldText
-				}
-				m.changes = append(m.changes, PendingChange{
-					Type:    "set_type",
-					Field:   field,
-					NewType: newType,
-				})
-				m.fields[idx].Type = newType
-			}
-		case "n":
-			m.mode = modeNewFieldKey
-			m.input.SetValue("")
-			return m, m.input.Focus()
-		case "q":
-			if len(m.changes) > 0 {
-				m.mode = modeConfirmDiscard
-				m.confirm = NewConfirm(fmt.Sprintf("Discard %d unsaved change(s)?", len(m.changes)))
-				m.pendingAction = actionQuit
-				return m, nil
-			}
-			m.quitting = true
-		}
+		return m.updateNormalRune(string(keyMsg.Runes), idx)
 	}
 
 	return m, nil
 }
 
+// updateNormalRune handles the single-rune shortcuts available in normal mode.
+// idx is the index into m.fields under the cursor, or -1 when the table is empty.
+func (m FieldEditor) updateNormalRune(r string, idx int) (FieldEditor, tea.Cmd) {
+	switch r {
+	case "/":
+		m.mode = modeFilter
+		m.input.SetValue(m.filterText)
+		m.input.CursorEnd()
+		return m, m.input.Focus()
+	case "e":
+		if idx >= 0 {
+			m.mode = modeEdit
+			m.input.SetValue(m.fields[idx].Value)
+			m.input.CursorEnd()
+			return m, m.input.Focus()
+		}
+	case "s":
+		if len(m.changes) > 0 {
+			m.saving = true
+		}
+	case "v":
+		if idx >= 0 && m.fields[idx].Type == secrets.FieldConcealed {
+			m.toggleReveal(idx)
+		}
+	case "d":
+		if idx >= 0 {
+			m.mode = modeConfirmDelete
+			m.confirm = NewConfirm(fmt.Sprintf("Delete %s?", m.fields[idx].Key))
+		}
+	case "r":
+		if idx >= 0 {
+			m.mode = modeRename
+			m.input.SetValue(m.fields[idx].Key)
+			m.input.CursorEnd()
+			return m, m.input.Focus()
+		}
+	case "t":
+		if m.hasTypeEditor && idx >= 0 {
+			m.toggleFieldType(idx)
+		}
+	case "n":
+		m.mode = modeNewFieldKey
+		m.input.SetValue("")
+		return m, m.input.Focus()
+	case "q":
+		if len(m.changes) > 0 {
+			m.mode = modeConfirmDiscard
+			m.confirm = NewConfirm(fmt.Sprintf("Discard %d unsaved change(s)?", len(m.changes)))
+			m.pendingAction = actionQuit
+			return m, nil
+		}
+		m.quitting = true
+	}
+
+	return m, nil
+}
+
+// toggleReveal flips whether the concealed value at index idx is shown in clear text.
+// The reveal state is display-only and is never recorded as a pending change.
+func (m *FieldEditor) toggleReveal(idx int) {
+	if m.revealed == nil {
+		m.revealed = make(map[int]bool)
+	}
+	m.revealed[idx] = !m.revealed[idx]
+}
+
+// toggleFieldType swaps the field at index idx between text and concealed,
+// and queues the swap as a pending change for the next save.
+func (m *FieldEditor) toggleFieldType(idx int) {
+	field := m.fields[idx]
+	newType := secrets.FieldConcealed
+	if field.Type == secrets.FieldConcealed {
+		newType = secrets.FieldText
+	}
+	m.changes = append(m.changes, PendingChange{
+		Type:    changeSetType,
+		Field:   field,
+		NewType: newType,
+	})
+	m.fields[idx].Type = newType
+}
+
+// updateEdit handles the value prompt. Enter queues an update for the field
+// under the cursor and Esc discards the typed value.
 func (m FieldEditor) updateEdit(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
@@ -321,7 +363,7 @@ func (m FieldEditor) updateEdit(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		field := m.fields[idx]
 		field.Value = m.input.Value()
 		m.changes = append(m.changes, PendingChange{
-			Type:  "update",
+			Type:  changeUpdate,
 			Field: field,
 		})
 		m.fields[idx].Value = m.input.Value()
@@ -337,6 +379,8 @@ func (m FieldEditor) updateEdit(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	}
 }
 
+// updateRename handles the key-rename prompt. Enter queues a rename that
+// carries the original key so the backend can find the field.
 func (m FieldEditor) updateRename(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
@@ -353,7 +397,7 @@ func (m FieldEditor) updateRename(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		field := m.fields[idx]
 		field.Key = m.input.Value()
 		m.changes = append(m.changes, PendingChange{
-			Type:   "rename",
+			Type:   changeRename,
 			Field:  field,
 			OldKey: oldKey,
 		})
@@ -370,6 +414,8 @@ func (m FieldEditor) updateRename(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	}
 }
 
+// updateNewFieldKey handles the first step of the new-field flow. The typed key
+// is parked in newFieldKey and the prompt moves on to the value.
 func (m FieldEditor) updateNewFieldKey(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
@@ -394,6 +440,8 @@ func (m FieldEditor) updateNewFieldKey(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	}
 }
 
+// updateNewFieldValue handles the second step of the new-field flow. Enter adds
+// the field to the table and queues it as an update.
 func (m FieldEditor) updateNewFieldValue(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
@@ -410,7 +458,7 @@ func (m FieldEditor) updateNewFieldValue(msg tea.Msg) (FieldEditor, tea.Cmd) {
 			Type:  secrets.FieldText,
 		}
 		m.changes = append(m.changes, PendingChange{
-			Type:  "update",
+			Type:  changeUpdate,
 			Field: newField,
 		})
 		m.fields = append(m.fields, newField)
@@ -428,6 +476,8 @@ func (m FieldEditor) updateNewFieldValue(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	}
 }
 
+// updateConfirmDelete waits on the delete confirmation. Confirming queues a
+// delete for the field under the cursor; dismissing changes nothing.
 func (m FieldEditor) updateConfirmDelete(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	var cmd tea.Cmd
 	m.confirm, cmd = m.confirm.Update(msg)
@@ -437,7 +487,7 @@ func (m FieldEditor) updateConfirmDelete(msg tea.Msg) (FieldEditor, tea.Cmd) {
 		if idx >= 0 {
 			field := m.fields[idx]
 			m.changes = append(m.changes, PendingChange{
-				Type:  "delete",
+				Type:  changeDelete,
 				Field: field,
 			})
 		}
@@ -449,6 +499,8 @@ func (m FieldEditor) updateConfirmDelete(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	return m, cmd
 }
 
+// updateFilter handles the filter prompt. The table filters live as the user
+// types, so Enter and Esc both just close the prompt.
 func (m FieldEditor) updateFilter(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
@@ -474,6 +526,8 @@ func (m FieldEditor) updateFilter(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	}
 }
 
+// updateConfirmDiscard waits on the unsaved-changes confirmation. Confirming
+// drops every pending change and runs the action that triggered the prompt.
 func (m FieldEditor) updateConfirmDiscard(msg tea.Msg) (FieldEditor, tea.Cmd) {
 	var cmd tea.Cmd
 	m.confirm, cmd = m.confirm.Update(msg)
@@ -495,32 +549,39 @@ func (m FieldEditor) updateConfirmDiscard(msg tea.Msg) (FieldEditor, tea.Cmd) {
 }
 
 // View renders the field editor screen.
+//
+//nolint:revive // strings.Builder Write methods always return nil error
 func (m FieldEditor) View() string {
 	var b strings.Builder
 
-	b.WriteString(Title.Render(fmt.Sprintf("Fields: %s", m.itemName)))
+	m.renderHeader(&b)
+	m.renderTable(&b)
+	b.WriteString("\n")
+	m.renderModeUI(&b)
+	m.renderFooter(&b)
+
+	return b.String()
+}
+
+// renderHeader writes the item title, its reference, and any active filter.
+//
+//nolint:revive // strings.Builder Write methods always return nil error
+func (m FieldEditor) renderHeader(b *strings.Builder) {
+	b.WriteString(Title.Render("Fields: " + m.itemName))
 	b.WriteString("\n")
 	b.WriteString(Subtitle.Render(m.itemRef))
 	b.WriteString("\n")
 
-	// Show active filter
 	if m.filterText != "" && m.mode != modeFilter {
-		b.WriteString(StatusBar.Render(fmt.Sprintf("  filter: %s", m.filterText)))
+		b.WriteString(StatusBar.Render("  filter: " + m.filterText))
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
+}
 
-	// Render field table (filtered + viewport)
-	visible := m.visibleFields()
-	cap := m.fieldCapacity()
-	endIdx := m.viewportOffset + cap
-	if endIdx > len(visible) {
-		endIdx = len(visible)
-	}
-
-	// Compute column widths from visible fields
-	keyWidth := 0
-	valWidth := 0
+// columnWidths measures the key and value columns across the visible fields.
+// The value column is capped at maxValueWidth.
+func (m FieldEditor) columnWidths(visible []int) (keyWidth, valWidth int) {
 	for _, fi := range visible {
 		f := m.fields[fi]
 		if len(f.Key) > keyWidth {
@@ -534,12 +595,40 @@ func (m FieldEditor) View() string {
 			valWidth = len(v)
 		}
 	}
-	// Cap value width to avoid absurdly wide lines
-	if valWidth > 50 {
-		valWidth = 50
+	if valWidth > maxValueWidth {
+		valWidth = maxValueWidth
 	}
+	return keyWidth, valWidth
+}
 
-	// Scroll indicators
+// displayValue returns the string shown in the value column for field index fi,
+// masking concealed values and truncating anything wider than valWidth.
+func (m FieldEditor) displayValue(fi, valWidth int) string {
+	f := m.fields[fi]
+	if f.Type == secrets.FieldConcealed && !m.revealed[fi] {
+		return concealedPlaceholder
+	}
+	// Revealed secrets are shown in full even when they overflow the column.
+	if f.Type == secrets.FieldConcealed {
+		return f.Value
+	}
+	if len(f.Value) > valWidth {
+		return f.Value[:valWidth-1] + "…"
+	}
+	return f.Value
+}
+
+// renderTable writes the field rows for the current viewport plus scroll hints.
+//
+//nolint:revive // strings.Builder Write methods always return nil error
+func (m FieldEditor) renderTable(b *strings.Builder) {
+	visible := m.visibleFields()
+	endIdx := m.viewportOffset + m.fieldCapacity()
+	if endIdx > len(visible) {
+		endIdx = len(visible)
+	}
+	keyWidth, valWidth := m.columnWidths(visible)
+
 	if m.viewportOffset > 0 {
 		b.WriteString(Subtitle.Render(fmt.Sprintf("  ↑ %d more above", m.viewportOffset)))
 		b.WriteString("\n")
@@ -548,32 +637,18 @@ func (m FieldEditor) View() string {
 	rowFmt := fmt.Sprintf("%%s%%-%ds  %%-%ds  %%s", keyWidth, valWidth)
 	for vi := m.viewportOffset; vi < endIdx; vi++ {
 		fi := visible[vi]
-		f := m.fields[fi]
 		cursor := "  "
 		if vi == m.cursor {
 			cursor = "> "
 		}
-
-		displayValue := f.Value
-		if f.Type == secrets.FieldConcealed && !m.revealed[fi] {
-			displayValue = concealedPlaceholder
-		}
-		// Truncate long values to keep columns aligned, but show full value when revealed
-		isRevealed := f.Type == secrets.FieldConcealed && m.revealed[fi]
-		if len(displayValue) > valWidth && !isRevealed {
-			displayValue = displayValue[:valWidth-1] + "…"
-		}
-
-		line := fmt.Sprintf(rowFmt, cursor, f.Key, displayValue, string(f.Type))
+		line := fmt.Sprintf(rowFmt, cursor, m.fields[fi].Key, m.displayValue(fi, valWidth), string(m.fields[fi].Type))
 		if vi == m.cursor {
-			b.WriteString(Selected.Render(line))
-		} else {
-			b.WriteString(line)
+			line = Selected.Render(line)
 		}
+		b.WriteString(line)
 		b.WriteString("\n")
 	}
 
-	// Scroll indicators
 	if endIdx < len(visible) {
 		b.WriteString(Subtitle.Render(fmt.Sprintf("  ↓ %d more below", len(visible)-endIdx)))
 		b.WriteString("\n")
@@ -583,54 +658,54 @@ func (m FieldEditor) View() string {
 		b.WriteString(Subtitle.Render("  No fields match filter"))
 		b.WriteString("\n")
 	}
+}
 
-	b.WriteString("\n")
-
-	// Render mode-specific UI
+// renderModeUI writes the prompt or confirmation belonging to the current mode.
+//
+//nolint:revive // strings.Builder Write methods always return nil error
+func (m FieldEditor) renderModeUI(b *strings.Builder) {
 	idx := m.realIndex()
 	switch m.mode {
 	case modeEdit:
 		if idx >= 0 {
-			b.WriteString(fmt.Sprintf("  Edit value for %s:\n", m.fields[idx].Key))
+			b.WriteString("  Edit value for " + m.fields[idx].Key + ":\n")
 		}
 		b.WriteString("  " + m.input.View() + "\n")
 	case modeRename:
 		if idx >= 0 {
-			b.WriteString(fmt.Sprintf("  Rename %s:\n", m.fields[idx].Key))
+			b.WriteString("  Rename " + m.fields[idx].Key + ":\n")
 		}
 		b.WriteString("  " + m.input.View() + "\n")
 	case modeNewFieldKey:
 		b.WriteString("  New field key:\n")
 		b.WriteString("  " + m.input.View() + "\n")
 	case modeNewFieldValue:
-		b.WriteString(fmt.Sprintf("  Value for %s:\n", m.newFieldKey))
+		b.WriteString("  Value for " + m.newFieldKey + ":\n")
 		b.WriteString("  " + m.input.View() + "\n")
 	case modeFilter:
 		b.WriteString("  Filter: ")
 		b.WriteString(m.input.View())
 		b.WriteString("\n")
-	case modeConfirmDelete:
-		b.WriteString(m.confirm.View())
-	case modeConfirmDiscard:
+	case modeConfirmDelete, modeConfirmDiscard:
 		b.WriteString(m.confirm.View())
 	}
+}
 
-	// Status bar
-	changeCount := len(m.changes)
-	if changeCount > 0 {
+// renderFooter writes the pending-change count and the key help line.
+//
+//nolint:revive // strings.Builder Write methods always return nil error
+func (m FieldEditor) renderFooter(b *strings.Builder) {
+	if changeCount := len(m.changes); changeCount > 0 {
 		b.WriteString(StatusBar.Render(fmt.Sprintf("\n  %d pending change(s)", changeCount)))
 		b.WriteString("\n")
 	}
 
-	// Help
 	helpText := "enter/e:edit  v:reveal  d:delete  r:rename  n:new  /:filter  s:save  esc:back  q:quit"
 	if m.hasTypeEditor {
 		helpText = "enter/e:edit  v:reveal  d:delete  r:rename  t:toggle  n:new  /:filter  s:save  esc:back  q:quit"
 	}
 	b.WriteString("\n")
 	b.WriteString(Help.Render(helpText))
-
-	return b.String()
 }
 
 // PendingChanges returns the accumulated list of changes.

@@ -2,8 +2,6 @@
 package tui
 
 import (
-	"fmt"
-
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -87,16 +85,14 @@ func (m AppPicker) Update(msg tea.Msg) (AppPicker, tea.Cmd) {
 			break
 		}
 
-		switch msg.Type {
-		case tea.KeyEnter:
+		if msg.Type == tea.KeyEnter {
 			if item, ok := m.list.SelectedItem().(appItem); ok {
 				m.selected = item.name
 			}
 			return m, nil
 		}
 
-		switch msg.String() {
-		case "q":
+		if msg.String() == "q" {
 			m.quitting = true
 			return m, nil
 		}
@@ -110,7 +106,7 @@ func (m AppPicker) Update(msg tea.Msg) (AppPicker, tea.Cmd) {
 // View implements tea.Model. Renders the app list.
 func (m AppPicker) View() string {
 	if m.autoSelect {
-		return fmt.Sprintf("Auto-selected application: %s", m.selected)
+		return "Auto-selected application: " + m.selected
 	}
 	return m.list.View()
 }

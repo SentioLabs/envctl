@@ -36,13 +36,18 @@ type ItemList struct {
 // NewItemList creates an ItemList with the given vault name and items.
 // The vault name is used as the list title.
 func NewItemList(vault string, items []secrets.Item) ItemList {
+	const (
+		defaultWidth  = 80
+		defaultHeight = 20
+	)
+
 	listItems := make([]list.Item, len(items))
 	for i, item := range items {
 		listItems[i] = itemListItem{item: item}
 	}
 
-	l := list.New(listItems, list.NewDefaultDelegate(), 80, 20)
-	l.Title = fmt.Sprintf("Items in %s", vault)
+	l := list.New(listItems, list.NewDefaultDelegate(), defaultWidth, defaultHeight)
+	l.Title = "Items in " + vault
 	l.SetShowHelp(false)
 	l.SetFilteringEnabled(true)
 	// Disable built-in quit key so we handle it ourselves.
@@ -109,10 +114,11 @@ func (m ItemList) updateNormalMode(msg tea.Msg) (ItemList, tea.Cmd) {
 	return m, cmd
 }
 
+// updateCreateMode handles the new-item name prompt. Enter records the typed
+// name for the caller to act on and Esc abandons it.
 func (m ItemList) updateCreateMode(msg tea.Msg) (ItemList, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.Type {
 		case tea.KeyEnter:
 			m.newName = m.input.Value()
 			m.creating = false

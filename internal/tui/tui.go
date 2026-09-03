@@ -8,8 +8,10 @@ import (
 	"github.com/sentiolabs/envctl/internal/secrets"
 )
 
+// screen identifies which child model currently owns the terminal.
 type screen int
 
+// The screens the root model can show, in the order the two flows walk them.
 const (
 	screenAppPicker screen = iota
 	screenEnvPicker
@@ -34,39 +36,45 @@ type Options struct {
 // between VaultPicker, ItemList, and FieldEditor, and calls secrets.Editor
 // methods for loading data and applying changes.
 type Model struct {
-	editor        secrets.Editor
-	editorFactory func(ctx context.Context, backend string) (secrets.Editor, error)
-	configCtx     *ConfigContext
-	screen        screen
-	vaultPicker   VaultPicker
-	itemList      ItemList
-	fieldEditor   FieldEditor
-	appPicker     AppPicker
-	envPicker     EnvPicker
-	secretList    SecretList
-	currentVault  *secrets.Vault
-	currentItem   *secrets.Item
+	editor           secrets.Editor
+	editorFactory    func(ctx context.Context, backend string) (secrets.Editor, error)
+	configCtx        *ConfigContext
+	screen           screen
+	vaultPicker      VaultPicker
+	itemList         ItemList
+	fieldEditor      FieldEditor
+	appPicker        AppPicker
+	envPicker        EnvPicker
+	secretList       SecretList
+	currentVault     *secrets.Vault
+	currentItem      *secrets.Item
 	currentApp       string
 	currentEnv       string
 	currentSourceRef string // secret ref being edited in config mode
 	loading          bool
-	err           error
-	width         int
-	height        int
-	presetVault   string
-	presetItem    string
+	err              error
+	width            int
+	height           int
+	presetVault      string
+	presetItem       string
 }
 
 // Message types for async operations.
-type vaultsLoadedMsg struct{ vaults []secrets.Vault }
-type itemsLoadedMsg struct{ items []secrets.Item }
-type fieldsLoadedMsg struct {
-	fields   []secrets.Field
-	itemRef  string
-	itemName string
-}
-type saveCompleteMsg struct{ err error }
-type errMsg struct{ err error }
+type (
+	vaultsLoadedMsg struct{ vaults []secrets.Vault }
+	itemsLoadedMsg  struct{ items []secrets.Item }
+	fieldsLoadedMsg struct {
+		fields   []secrets.Field
+		itemRef  string
+		itemName string
+	}
+)
+
+// Message types for terminal states of an operation.
+type (
+	saveCompleteMsg struct{ err error }
+	errMsg          struct{ err error }
+)
 
 // editorCreatedMsg is sent when an EditorFactory call completes.
 type editorCreatedMsg struct {
@@ -158,6 +166,8 @@ func (m Model) Init() tea.Cmd {
 }
 
 // Update processes messages and delegates to the active screen.
+// Async results are handled here; everything else goes to the active screen,
+// but only once loading has finished.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Error state: any key quits.
 	if m.err != nil {
@@ -251,6 +261,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateAppPicker drives the application picker. Selecting an app builds the
+// environment picker for that app and advances to it.
 func (m Model) updateAppPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.appPicker, _ = m.appPicker.Update(msg)
 
@@ -268,6 +280,8 @@ func (m Model) updateAppPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateEnvPicker drives the environment picker. Selecting an environment
+// builds the secret list for the app and environment pair.
 func (m Model) updateEnvPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.envPicker, _ = m.envPicker.Update(msg)
 
@@ -296,6 +310,8 @@ func (m Model) updateEnvPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateSecretList drives the config-mode secret list. Both selecting a source
+// and choosing browse mode need a backend editor, so each returns a factory command.
 func (m Model) updateSecretList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.secretList, _ = m.secretList.Update(msg)
 
@@ -323,6 +339,8 @@ func (m Model) updateSecretList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateVaultPicker drives the browse-mode vault picker. Selecting a vault
+// starts loading its items.
 func (m Model) updateVaultPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.vaultPicker, cmd = m.vaultPicker.Update(msg)
@@ -341,6 +359,8 @@ func (m Model) updateVaultPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// updateItemList drives the browse-mode item list. Selecting an item starts
+// loading its fields into the field editor.
 func (m Model) updateItemList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.itemList, cmd = m.itemList.Update(msg)
@@ -365,6 +385,8 @@ func (m Model) updateItemList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// updateFieldEditor drives the field editor. Saving hands the pending changes
+// to the backend, and going back returns to whichever list opened this editor.
 func (m Model) updateFieldEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.fieldEditor, cmd = m.fieldEditor.Update(msg)
@@ -476,44 +498,51 @@ func (m Model) saveChanges(changes []PendingChange) tea.Cmd {
 
 		// Try batched save first (1Password supports this)
 		if bs, ok := m.editor.(secrets.BatchSaver); ok {
-			batch := make([]secrets.Change, len(changes))
-			for i, c := range changes {
-				batch[i] = secrets.Change{
-					Type:    c.Type,
-					Field:   c.Field,
-					OldKey:  c.OldKey,
-					NewType: c.NewType,
-				}
-			}
-			if err := bs.BatchSave(ctx, ref, batch); err != nil {
-				return saveCompleteMsg{err: err}
-			}
-			return saveCompleteMsg{}
+			return saveCompleteMsg{err: bs.BatchSave(ctx, ref, toBatch(changes))}
 		}
 
 		// Fallback: sequential saves (AWS)
 		for _, c := range changes {
-			var err error
-			switch c.Type {
-			case "update":
-				err = m.editor.UpdateField(ctx, ref, c.Field)
-			case "delete":
-				err = m.editor.DeleteField(ctx, ref, c.Field)
-			case "rename":
-				oldField := c.Field
-				oldField.Key = c.OldKey
-				err = m.editor.RenameField(ctx, ref, oldField, c.Field.Key)
-			case "set_type":
-				if fte, ok := m.editor.(secrets.FieldTypeEditor); ok {
-					err = fte.SetFieldType(ctx, ref, c.Field, c.NewType)
-				}
-			}
-			if err != nil {
+			if err := m.applyChange(ctx, ref, c); err != nil {
 				return saveCompleteMsg{err: err}
 			}
 		}
 		return saveCompleteMsg{}
 	}
+}
+
+// toBatch converts the editor's pending changes into the backend change type.
+func toBatch(changes []PendingChange) []secrets.Change {
+	batch := make([]secrets.Change, len(changes))
+	for i, c := range changes {
+		batch[i] = secrets.Change{
+			Type:    c.Type,
+			Field:   c.Field,
+			OldKey:  c.OldKey,
+			NewType: c.NewType,
+		}
+	}
+	return batch
+}
+
+// applyChange applies one pending change through the single-field editor API.
+// A set_type change on a backend without FieldTypeEditor is skipped, not an error.
+func (m Model) applyChange(ctx context.Context, ref string, c PendingChange) error {
+	switch c.Type {
+	case changeUpdate:
+		return m.editor.UpdateField(ctx, ref, c.Field)
+	case changeDelete:
+		return m.editor.DeleteField(ctx, ref, c.Field)
+	case changeRename:
+		oldField := c.Field
+		oldField.Key = c.OldKey
+		return m.editor.RenameField(ctx, ref, oldField, c.Field.Key)
+	case changeSetType:
+		if fte, ok := m.editor.(secrets.FieldTypeEditor); ok {
+			return fte.SetFieldType(ctx, ref, c.Field, c.NewType)
+		}
+	}
+	return nil
 }
 
 // loadVaults returns a command that fetches vaults from the editor.
