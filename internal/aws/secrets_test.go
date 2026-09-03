@@ -18,6 +18,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// errCodeAccessDenied is the AWS API error code for permission failures.
+const (
+	errCodeAccessDenied = "AccessDeniedException"
+	msgAccessDenied     = "access denied"
+)
+
 // mockAPIError implements smithy.APIError for testing.
 type mockAPIError struct {
 	code    string
@@ -57,7 +63,7 @@ func TestIsNonRetryableError(t *testing.T) {
 		},
 		{
 			name: "AccessDeniedException is non-retryable",
-			err:  &mockAPIError{code: "AccessDeniedException", message: "access denied"},
+			err:  &mockAPIError{code: errCodeAccessDenied, message: msgAccessDenied},
 			want: true,
 		},
 		{
@@ -82,8 +88,8 @@ func TestIsAccessDenied(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "AccessDeniedException",
-			err:  &mockAPIError{code: "AccessDeniedException", message: "access denied"},
+			name: errCodeAccessDenied,
+			err:  &mockAPIError{code: errCodeAccessDenied, message: msgAccessDenied},
 			want: true,
 		},
 		{
@@ -98,7 +104,7 @@ func TestIsAccessDenied(t *testing.T) {
 		},
 		{
 			name: "wrapped AccessDeniedException",
-			err:  fmt.Errorf("wrapped: %w", &mockAPIError{code: "AccessDeniedException", message: "access denied"}),
+			err:  fmt.Errorf("wrapped: %w", &mockAPIError{code: errCodeAccessDenied, message: msgAccessDenied}),
 			want: true,
 		},
 		{
@@ -141,7 +147,7 @@ func TestMapAWSError(t *testing.T) {
 	})
 
 	t.Run("AccessDeniedException maps to AccessDeniedError", func(t *testing.T) {
-		err := &mockAPIError{code: "AccessDeniedException", message: "access denied"}
+		err := &mockAPIError{code: errCodeAccessDenied, message: msgAccessDenied}
 		result := mapAWSError("my-secret", err)
 
 		var accessDenied *errors.AccessDeniedError
