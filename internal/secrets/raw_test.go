@@ -3,6 +3,7 @@ package secrets_test
 import (
 	"testing"
 
+	"github.com/sentiolabs/envctl/internal/aws"
 	"github.com/sentiolabs/envctl/internal/mocks"
 	"github.com/sentiolabs/envctl/internal/secrets"
 )
@@ -15,6 +16,7 @@ var (
 	_ secrets.RawReader = (*mocks.MockRawReader)(nil)
 	_ secrets.Client    = (*mocks.MockRawClient)(nil)
 	_ secrets.RawReader = (*mocks.MockRawClient)(nil)
+	_ secrets.RawReader = (*aws.SecretsClient)(nil)
 )
 
 func TestRawReaderContract(t *testing.T) {
