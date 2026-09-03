@@ -1,0 +1,8 @@
+version: 1
+environments:
+  dev:
+    - secret: api/dev
+    - secret: api/dev/bundle
+      key: cert
+      as: CERT_PEM
+      file: { name: sp.crt, path_as: CERT_FILE }

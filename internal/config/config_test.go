@@ -4,6 +4,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -899,5 +900,54 @@ func TestFileSinkContract(t *testing.T) {
 	app := &Application{FilesDirAs: "APP_DIR"}
 	if got := cfg.ResolveFilesDirAs(app); got != "APP_DIR" {
 		t.Fatalf("app files_dir_as: got %q", got)
+	}
+}
+
+//nolint:revive // Table-driven file sink validation tests
+func TestFileSinkValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+		errMsg  string // "" means the fixture must load
+	}{
+		{"valid sinks", "file_sink_valid.yaml", ""},
+		{"both name and path", "file_sink_both_name_path.yaml", "exactly one of 'name' or 'path'"},
+		{"neither name nor path", "file_sink_neither.yaml", "exactly one of 'name' or 'path'"},
+		{"name with separator", "file_sink_name_with_slash.yaml", "must be a bare filename"},
+		{"bad mode", "file_sink_bad_mode.yaml", "invalid file mode"},
+		{"file with keys", "file_sink_with_keys.yaml", "cannot combine 'file' with 'keys'"},
+		{"file with as", "file_sink_with_as.yaml", "cannot combine 'file' with 'as'"},
+		{"duplicate path_as", "file_sink_dup_path_as.yaml", "duplicate path_as"},
+		{"missing path_as", "file_sink_missing_path_as.yaml", "missing required 'path_as'"},
+		{"bad files_dir_as", "file_sink_bad_files_dir_as.yaml", "not a valid environment variable name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := loadFixture(t, tt.fixture)
+			cfg, err := Load(path)
+			if tt.errMsg == "" {
+				if err != nil {
+					t.Fatalf("expected valid config, got: %v", err)
+				}
+				app := cfg.Applications["api"]
+				env := app.Environments["dev"]
+				if env.Sources[1].File == nil || env.Sources[1].File.Name != "sp.key" {
+					t.Fatalf("source[1] file sink not parsed: %+v", env.Sources[1].File)
+				}
+				if !env.Sources[3].File.Persistent() {
+					t.Fatal("source[3] should be persistent")
+				}
+				if got := cfg.ResolveFilesDirAs(app); got != "API_FILES_DIR" {
+					t.Fatalf("files_dir_as: got %q", got)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.errMsg)
+			}
+			if !strings.Contains(err.Error(), tt.errMsg) {
+				t.Fatalf("expected error containing %q, got %q", tt.errMsg, err.Error())
+			}
+		})
 	}
 }

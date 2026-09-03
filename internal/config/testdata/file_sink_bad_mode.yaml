@@ -1,0 +1,6 @@
+version: 1
+environments:
+  dev:
+    - secret: api/dev
+    - secret: api/dev/sp_key
+      file: { name: sp.key, mode: "rw-------", path_as: KEY_FILE }

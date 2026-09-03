@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sentiolabs/envctl/internal/errors"
@@ -25,6 +27,9 @@ const (
 	BackendAWS   = "aws"
 	Backend1Pass = "1pass"
 )
+
+// envVarNamePattern matches a POSIX-portable environment variable name.
+var envVarNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // Config represents the root configuration structure.
 // YAML tags use snake_case for consistency with standard YAML conventions.
@@ -278,7 +283,7 @@ func FindConfigFrom(startPath string) (string, error) {
 
 // Validate checks the config for required fields and valid values.
 //
-//nolint:revive // Config validation requires checking multiple conditions in sequence
+//nolint:revive,gocognit // Config validation requires checking multiple conditions in sequence
 func (c *Config) Validate(path string) error {
 	if c.Version != CurrentVersion {
 		return &errors.ConfigError{
@@ -312,6 +317,12 @@ func (c *Config) Validate(path string) error {
 		}
 	}
 
+	if c.FilesDirAs != "" {
+		if err := validateEnvVarName(c.FilesDirAs, "files_dir_as", path); err != nil {
+			return err
+		}
+	}
+
 	// Must have either applications or environments (or both for migration)
 	if len(c.Applications) == 0 && len(c.Environments) == 0 {
 		return &errors.ConfigError{
@@ -326,6 +337,11 @@ func (c *Config) Validate(path string) error {
 			return &errors.ConfigError{
 				Path:    path,
 				Message: "application " + appName + " has no environments defined",
+			}
+		}
+		if app.FilesDirAs != "" {
+			if err := validateEnvVarName(app.FilesDirAs, "application "+appName+" files_dir_as", path); err != nil {
+				return err
 			}
 		}
 		for envName, env := range app.Environments {
@@ -393,8 +409,11 @@ func validateEnvironment(env Environment, location, path string) error {
 		if err := validateIncludeKeys(src, loc, path); err != nil {
 			return err
 		}
+		if err := validateFileSink(src, loc, path); err != nil {
+			return err
+		}
 	}
-	return nil
+	return validateFileSinkSet(env, location, path)
 }
 
 // validateBackendField checks that the backend field value is valid and doesn't conflict
@@ -446,6 +465,97 @@ func validateIncludeKeys(inc IncludeEntry, location, path string) error {
 				Path:    path,
 				Message: fmt.Sprintf("%s keys[%d] is missing required 'key' field", location, j),
 			}
+		}
+	}
+	return nil
+}
+
+// validateEnvVarName checks that name is usable as an environment variable name.
+func validateEnvVarName(name, what, path string) error {
+	if !envVarNamePattern.MatchString(name) {
+		return &errors.ConfigError{
+			Path:    path,
+			Message: fmt.Sprintf("%s %q is not a valid environment variable name", what, name),
+		}
+	}
+	return nil
+}
+
+// validateFileSink checks a single source's file block.
+func validateFileSink(src IncludeEntry, location, path string) error {
+	f := src.File
+	if f == nil {
+		return nil
+	}
+	fail := func(msg string) error {
+		return &errors.ConfigError{Path: path, Message: location + " file: " + msg}
+	}
+	if (f.Name == "") == (f.Path == "") {
+		return fail("exactly one of 'name' or 'path' must be set")
+	}
+	if f.Name != "" {
+		if f.Name == "." || f.Name == ".." || strings.ContainsAny(f.Name, `/\`) {
+			return fail(fmt.Sprintf("name %q must be a bare filename", f.Name))
+		}
+	}
+	if _, err := f.FileMode(); err != nil {
+		return fail(err.Error())
+	}
+	if f.PathAs == "" {
+		return fail("missing required 'path_as' field")
+	}
+	if err := validateEnvVarName(f.PathAs, location+" file path_as", path); err != nil {
+		return err
+	}
+	if len(src.Keys) > 0 {
+		return fail("cannot combine 'file' with 'keys'")
+	}
+	if src.As != "" {
+		return fail("cannot combine 'file' with 'as'")
+	}
+	return nil
+}
+
+// validateFileSinkSet checks uniqueness across all sinks in one environment.
+func validateFileSinkSet(env Environment, location, path string) error {
+	seenPathAs := make(map[string]int)
+	seenName := make(map[string]int)
+	seenPath := make(map[string]int)
+	for i, src := range env.Sources {
+		f := src.File
+		if f == nil {
+			continue
+		}
+		if j, dup := seenPathAs[f.PathAs]; dup {
+			return &errors.ConfigError{
+				Path: path,
+				Message: fmt.Sprintf(
+					"%s source[%d] duplicate path_as %q (also used by source[%d])", location, i, f.PathAs, j,
+				),
+			}
+		}
+		seenPathAs[f.PathAs] = i
+		if f.Name != "" {
+			if j, dup := seenName[f.Name]; dup {
+				return &errors.ConfigError{
+					Path: path,
+					Message: fmt.Sprintf(
+						"%s source[%d] duplicate file name %q (also used by source[%d])", location, i, f.Name, j,
+					),
+				}
+			}
+			seenName[f.Name] = i
+		}
+		if f.Path != "" {
+			if j, dup := seenPath[f.Path]; dup {
+				return &errors.ConfigError{
+					Path: path,
+					Message: fmt.Sprintf(
+						"%s source[%d] duplicate file path %q (also used by source[%d])", location, i, f.Path, j,
+					),
+				}
+			}
+			seenPath[f.Path] = i
 		}
 	}
 	return nil
