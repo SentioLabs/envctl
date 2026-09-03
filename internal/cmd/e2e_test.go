@@ -187,10 +187,9 @@ func readMarker(t *testing.T, dir, name string) string {
 }
 
 // e2eChildScript records what the child process observed into OUT. The
-// final "ready" marker uses a plain redirection, not a pipeline: sh still
-// holds SIGINT while any of the preceding pipelines' children (cut) are
-// running, so a marker written by a pipeline is not proof the shell itself
-// is ready to receive a signal.
+// final "ready" marker uses a plain redirection: sh defers SIGINT while it
+// waits on any foreground command, so a marker written by an earlier
+// command is not proof the shell itself is ready to receive a signal.
 func e2eChildScript(tail string) string {
 	return `printf %s "$KEY_FILE" > "$OUT/path"; ` +
 		`printf %s "$FILES_DIR" > "$OUT/dir"; ` +
@@ -238,11 +237,11 @@ func TestE2E_RunSIGINTFromOutsideRemovesRunDir(t *testing.T) {
 		"-c", configPath, "run", "--", "sh", "-c", e2eChildScript("exec sleep 30"))
 	require.NoError(t, cmd.Start())
 
-	// Wait for the "ready" marker, written after every pipeline in the child
-	// script by a plain redirection. sh (the child before it execs into
-	// sleep) swallows a SIGINT that arrives while it is still waiting on a
-	// pipeline's children (cut), even though an earlier pipeline stage
-	// already wrote its own output file; the script simply continues to
+	// Wait for the "ready" marker, written after every foreground command in
+	// the child script by a plain redirection. sh (the child before it execs
+	// into sleep) defers a SIGINT that arrives while it is still waiting on
+	// any foreground command, even one that already wrote its own output
+	// file; once that command exits normally, the script simply continues to
 	// `exec sleep 30` with the signal consumed. Waiting for "ready" closes
 	// that window.
 	require.Eventually(t, func() bool {

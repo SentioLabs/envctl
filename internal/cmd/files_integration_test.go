@@ -119,9 +119,9 @@ func captureStderr(t *testing.T, fn func() error) (string, error) { return captu
 
 // childScript is a portable shell body that records what the child observed.
 // OUT is the directory the child writes into. The final "ready" marker uses
-// a plain redirection, not a pipeline: sh still holds SIGINT while any of the
-// preceding pipelines' children (cut) are running, so a marker written by a
-// pipeline is not proof the shell itself is ready to receive a signal.
+// a plain redirection: sh defers SIGINT while it waits on any foreground
+// command, so a marker written by an earlier command is not proof the shell
+// itself is ready to receive a signal.
 func childScript(out, tail string) []string {
 	body := `printf %s "$KEY_FILE" > "$OUT/path"; ` +
 		`printf %s "$FILES_DIR" > "$OUT/dir"; ` +
@@ -179,16 +179,16 @@ func TestRun_SIGINTCleansUp(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- runRun(runCmd, childScript(out, "exec sleep 30")) }()
 
-	// Wait for the "ready" marker, written after every pipeline in the child
-	// script by a plain redirection, before interrupting ourselves. sh (the
-	// child before it execs into sleep) swallows a SIGINT that arrives while
-	// it is still waiting on a pipeline's children (cut), even though an
-	// earlier pipeline stage already wrote its own output file; the script
-	// simply continues to `exec sleep 30` with the signal consumed. Waiting
-	// for "ready" closes that window. The runner has signal.Notify installed,
-	// so the process does not die on SIGINT; it forwards SIGINT to the child
-	// (now `sleep`, thanks to exec), Wait returns, and runRun's deferred
-	// cleanup runs.
+	// Wait for the "ready" marker, written after every foreground command in
+	// the child script by a plain redirection, before interrupting
+	// ourselves. sh (the child before it execs into sleep) defers a SIGINT
+	// that arrives while it is still waiting on any foreground command, even
+	// one that already wrote its own output file; once that command exits
+	// normally, the script simply continues to `exec sleep 30` with the
+	// signal consumed. Waiting for "ready" closes that window. The runner
+	// has signal.Notify installed, so the process does not die on SIGINT; it
+	// forwards SIGINT to the child (now `sleep`, thanks to exec), Wait
+	// returns, and runRun's deferred cleanup runs.
 	require.Eventually(t, func() bool {
 		_, err := os.Stat(filepath.Join(out, "ready"))
 		return err == nil
