@@ -127,12 +127,34 @@ func PromoteBackend(src *IncludeEntry) {
 	}
 }
 
+// legacyEnvironmentKeys are the only keys the single-secret mapping form accepts.
+var legacyEnvironmentKeys = map[string]bool{
+	"secret": true, "backend": true, "include_all": true, "aws": true, "1pass": true,
+}
+
+// checkKnownKeys rejects mapping keys outside allowed. yaml.Node.Decode does not
+// honor the top-level decoder's KnownFields setting, so the legacy branch has to
+// enforce strictness itself.
+func checkKnownKeys(node *yaml.Node, allowed map[string]bool) error {
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i].Value
+		if !allowed[key] {
+			return fmt.Errorf("unknown field %q in environment (line %d); use the list form for key, keys, as, or file",
+				key, node.Content[i].Line)
+		}
+	}
+	return nil
+}
+
 // UnmarshalYAML implements custom YAML unmarshaling to support both
 // legacy mapping format and new sequence format.
 func (e *Environment) UnmarshalYAML(value *yaml.Node) error {
 	switch value.Kind {
 	case yaml.MappingNode:
 		// Legacy single-secret format: {secret: "...", aws: {...}, include_all: true}
+		if err := checkKnownKeys(value, legacyEnvironmentKeys); err != nil {
+			return err
+		}
 		//nolint:tagliatelle // Using snake_case for YAML field names is intentional
 		var legacy struct {
 			Secret     string         `yaml:"secret"`            //nolint:gosec // G117: refers to secret ref, not creds

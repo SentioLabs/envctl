@@ -951,3 +951,25 @@ func TestFileSinkValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestLegacyMappingRejectsUnknownFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+		errMsg  string
+	}{
+		{"key on legacy mapping", "legacy_unknown_field.yaml", `unknown field "key"`},
+		{"file on legacy mapping", "legacy_file_sink.yaml", `unknown field "file"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(loadFixture(t, tt.fixture))
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.errMsg)
+			}
+			if !strings.Contains(err.Error(), tt.errMsg) {
+				t.Fatalf("expected error containing %q, got %q", tt.errMsg, err.Error())
+			}
+		})
+	}
+}
