@@ -227,6 +227,7 @@ Config (root level):
   default_environment: string          # Optional
   default_backend: string              # Required when both aws: and 1pass: configured
   include_all: bool                    # Optional
+  files_dir_as: string                 # Optional: variable that receives ephemeral run dir
   aws: AWSConfig                       # Optional (see below)
   1pass: OnePassConfig                 # Optional (see below)
   environments: map[string]Environment # Legacy mode
@@ -238,6 +239,7 @@ Application:
   <env_name>: Environment              # Inlined environment map
   mapping: map[string]string
   include_all: bool
+  files_dir_as: string                 # Optional: variable that receives ephemeral run dir
 
 Environment (mapping format — single source):
   secret: string                       # Required
@@ -254,6 +256,7 @@ IncludeEntry (source entry):
   key: string                          # Optional: specific key from secret
   as: string                           # Optional: rename the key
   keys: []KeyMapping                   # Optional: multiple keys (mutually exclusive with key)
+  file: *FileSink                      # Optional: write to disk, export path only
   backend: string                      # Optional: "aws" or "1pass" routing hint
   aws: AWSConfig                       # Optional: cross-backend override
   1pass: OnePassConfig                 # Optional: cross-backend override
@@ -314,3 +317,42 @@ Plain text secrets are exposed with the key "_value". Use 'as' to rename:
       - secret: myapp/password
         key: _value
         as: MY_PASSWORD
+
+File Sinks
+----------
+
+A source with a 'file' block is written to disk and only its path is
+exported. Use it for material an application reads from a file: PEM
+keys and certificates, IdP metadata, kubeconfigs, service-account JSON.
+
+  - secret: dev/app/saml_sp_key
+    file:
+      name: sp.key                 # ephemeral: under a per-run 0700 dir
+      mode: "0600"                 # default
+      path_as: APP_SAML_KEY_FILE   # receives the absolute path
+
+  - secret: dev/app/kubeconfig
+    key: config                    # optional: pick one JSON field
+    file:
+      path: ~/.config/app/kube     # persistent: explicit path, ~ and ${VAR} expand
+      path_as: KUBECONFIG
+
+Rules:
+  - Exactly one of 'name' or 'path'.
+  - 'path_as' is required and must be a valid environment variable name.
+  - 'file' cannot be combined with 'keys' or 'as'.
+  - Without 'key', the AWS secret is written byte-for-byte (JSON stays
+    JSON). 1Password sources need 'key'.
+  - A 'path' inside a git worktree is refused unless git ignores it.
+
+files_dir_as (application or global) names a variable that receives the
+ephemeral run directory, for bind-mounting a whole set of files:
+
+  applications:
+    api:
+      files_dir_as: API_FILES_DIR
+
+Only 'envctl run' writes ephemeral sinks and removes them on exit.
+'env', 'export' and 'get' write persistent sinks and skip ephemeral ones
+with a warning. 'envctl clean' removes persistent sinks ('--all' for every
+application and environment).
