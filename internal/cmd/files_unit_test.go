@@ -97,4 +97,6 @@ func TestMaterializeFiles_BadModeCleansUp(t *testing.T) {
 	}
 	_, err := materializeFiles(files, "", t.TempDir(), sinkModeRun)
 	require.Error(t, err)
+	assert.Equal(t, []byte{0}, files[0].Content, "good file's buffer must be zeroed on a later failure")
+	assert.Equal(t, []byte{0}, files[1].Content, "bad-mode file's buffer must be zeroed")
 }

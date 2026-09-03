@@ -52,6 +52,13 @@ func materializeFiles(files []env.ResolvedFile, dirAs, configDir string, mode si
 	m := &materialized{}
 	var skipped []string
 
+	// Zero every buffer on the way out, whatever path we take.
+	defer func() {
+		for i := range files {
+			clear(files[i].Content)
+		}
+	}()
+
 	for i := range files {
 		f := &files[i]
 		bits, err := f.Sink.FileMode()
@@ -74,10 +81,8 @@ func materializeFiles(files []env.ResolvedFile, dirAs, configDir string, mode si
 			path, err = m.dir.WriteEphemeral(f.Sink.Name, f.Content, bits)
 		default:
 			skipped = append(skipped, f.Sink.PathAs)
-			clear(f.Content)
 			continue
 		}
-		clear(f.Content)
 		if err != nil {
 			m.Close()
 			return nil, err

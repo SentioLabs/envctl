@@ -4,7 +4,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/sentiolabs/envctl/internal/env"
 	"github.com/sentiolabs/envctl/internal/runner"
@@ -51,17 +54,31 @@ func init() {
 // File sinks are written before the child starts and the ephemeral run
 // directory is removed when runRun returns, on success, failure, or a
 // forwarded signal. A non-zero child exit surfaces as *runner.ExitError,
-// which Execute turns into the process exit code after this cleanup.
+// which Execute turns into the process exit code after this cleanup. A
+// signal trap covers secret fetch and file materialization too, so a
+// Ctrl-C before the child starts still runs the deferred cleanup.
 func runRun(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
+	// Trap termination signals for the whole command so a Ctrl-C during
+	// secret fetch or file materialization returns through the normal error
+	// path and deferred cleanup runs. The runner forwards signals to the
+	// child once it starts; it receives its own uncancelled context so a
+	// forwarded signal never becomes a SIGKILL via exec.CommandContext.
+	sigCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+
 	overrides := parseOverrides(setFlags)
 
-	out, err := loadAndBuildFiles(ctx, cmd, overrides, sinkModeRun)
+	out, err := loadAndBuildFiles(sigCtx, cmd, overrides, sinkModeRun)
 	if err != nil {
 		return err
 	}
 	defer out.files.Close()
+
+	if err := sigCtx.Err(); err != nil {
+		return fmt.Errorf("interrupted before command start: %w", err)
+	}
 
 	r := runner.NewRunner(env.ToMap(out.entries))
 	return r.Run(ctx, args)
