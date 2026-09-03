@@ -788,6 +788,8 @@ func TestToMap_EmptyInput(t *testing.T) {
 const (
 	sinkPrimarySecret = "app/dev"
 	sinkKeyFileVar    = "KEY_FILE"
+	sinkKeySecret     = "app/dev/sp_key"
+	sinkKeyFileName   = "sp.key"
 )
 
 func fileSinkConfig(sources ...config.IncludeEntry) *config.Config {
@@ -806,20 +808,23 @@ func TestBuildWithFiles_RawContentForKeylessSink(t *testing.T) {
 	client := mocks.NewMockRawClient(t)
 	cfg := fileSinkConfig(
 		config.IncludeEntry{Secret: sinkPrimarySecret},
-		config.IncludeEntry{Secret: "app/dev/sp_key", File: &config.FileSink{Name: "sp.key", PathAs: sinkKeyFileVar}},
+		config.IncludeEntry{
+			Secret: sinkKeySecret,
+			File:   &config.FileSink{Name: sinkKeyFileName, PathAs: sinkKeyFileVar},
+		},
 	)
 	client.Client.On("GetSecret", mock.Anything, sinkPrimarySecret).Return(map[string]string{"A": "1"}, nil)
 	pem := []byte("-----BEGIN PRIVATE KEY-----\nxyz\n")
-	client.Raw.On("GetSecretRaw", mock.Anything, "app/dev/sp_key").Return(pem, nil)
+	client.Raw.On("GetSecretRaw", mock.Anything, sinkKeySecret).Return(pem, nil)
 
 	res, err := NewBuilder(client, cfg, "", "dev").BuildWithFiles(ctx, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, map[string]string{"A": "1"}, ToMap(res.Entries), "sink content must not appear in entries")
 	require.Len(t, res.Files, 1)
-	assert.Equal(t, "sp.key", res.Files[0].Sink.Name)
+	assert.Equal(t, sinkKeyFileName, res.Files[0].Sink.Name)
 	assert.Equal(t, sinkKeyFileVar, res.Files[0].Sink.PathAs)
-	assert.Equal(t, "app/dev/sp_key", res.Files[0].Secret)
+	assert.Equal(t, sinkKeySecret, res.Files[0].Secret)
 	assert.Equal(t, pem, res.Files[0].Content)
 }
 
@@ -867,7 +872,10 @@ func TestBuild_NeverFetchesSinkContent(t *testing.T) {
 	client := mocks.NewMockRawClient(t)
 	cfg := fileSinkConfig(
 		config.IncludeEntry{Secret: sinkPrimarySecret},
-		config.IncludeEntry{Secret: "app/dev/sp_key", File: &config.FileSink{Name: "sp.key", PathAs: sinkKeyFileVar}},
+		config.IncludeEntry{
+			Secret: sinkKeySecret,
+			File:   &config.FileSink{Name: sinkKeyFileName, PathAs: sinkKeyFileVar},
+		},
 	)
 	client.Client.On("GetSecret", mock.Anything, sinkPrimarySecret).Return(map[string]string{"A": "1"}, nil)
 	// No GetSecretRaw expectation: a call would fail the mock.
@@ -896,11 +904,14 @@ func TestBuildWithFiles_IncludeAllFalseDoesNotRequireKeyForSink(t *testing.T) {
 	client := mocks.NewMockRawClient(t)
 	cfg := fileSinkConfig(
 		config.IncludeEntry{Secret: sinkPrimarySecret, Key: "A"},
-		config.IncludeEntry{Secret: "app/dev/sp_key", File: &config.FileSink{Name: "sp.key", PathAs: sinkKeyFileVar}},
+		config.IncludeEntry{
+			Secret: sinkKeySecret,
+			File:   &config.FileSink{Name: sinkKeyFileName, PathAs: sinkKeyFileVar},
+		},
 	)
 	cfg.IncludeAll = boolPtr(false)
 	client.Client.On("GetSecretKey", mock.Anything, sinkPrimarySecret, "A").Return("1", nil)
-	client.Raw.On("GetSecretRaw", mock.Anything, "app/dev/sp_key").Return([]byte("pem"), nil)
+	client.Raw.On("GetSecretRaw", mock.Anything, sinkKeySecret).Return([]byte("pem"), nil)
 
 	res, err := NewBuilder(client, cfg, "", "dev").BuildWithFiles(ctx, nil)
 	require.NoError(t, err, "a sink source without key must not trip IncludeAllRequiredError")
@@ -933,7 +944,7 @@ func TestBuildWithFiles_BackendQualifiedSinkUsesOwnClient(t *testing.T) {
 		config.IncludeEntry{Secret: "op://vault/item", Key: "A"},
 		config.IncludeEntry{
 			Secret: "dev/app/sp_key", Backend: config.BackendAWS,
-			File: &config.FileSink{Name: "sp.key", PathAs: sinkKeyFileVar},
+			File: &config.FileSink{Name: sinkKeyFileName, PathAs: sinkKeyFileVar},
 		},
 	)
 	cfg.IncludeAll = boolPtr(false)
