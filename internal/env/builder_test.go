@@ -785,6 +785,11 @@ func TestToMap_EmptyInput(t *testing.T) {
 	assert.Empty(t, result)
 }
 
+const (
+	sinkPrimarySecret = "app/dev"
+	sinkKeyFileVar    = "KEY_FILE"
+)
+
 func fileSinkConfig(sources ...config.IncludeEntry) *config.Config {
 	return &config.Config{
 		Version:            1,
@@ -800,10 +805,10 @@ func TestBuildWithFiles_RawContentForKeylessSink(t *testing.T) {
 	ctx := t.Context()
 	client := mocks.NewMockRawClient(t)
 	cfg := fileSinkConfig(
-		config.IncludeEntry{Secret: "app/dev"},
-		config.IncludeEntry{Secret: "app/dev/sp_key", File: &config.FileSink{Name: "sp.key", PathAs: "KEY_FILE"}},
+		config.IncludeEntry{Secret: sinkPrimarySecret},
+		config.IncludeEntry{Secret: "app/dev/sp_key", File: &config.FileSink{Name: "sp.key", PathAs: sinkKeyFileVar}},
 	)
-	client.Client.On("GetSecret", mock.Anything, "app/dev").Return(map[string]string{"A": "1"}, nil)
+	client.Client.On("GetSecret", mock.Anything, sinkPrimarySecret).Return(map[string]string{"A": "1"}, nil)
 	pem := []byte("-----BEGIN PRIVATE KEY-----\nxyz\n")
 	client.Raw.On("GetSecretRaw", mock.Anything, "app/dev/sp_key").Return(pem, nil)
 
@@ -813,7 +818,7 @@ func TestBuildWithFiles_RawContentForKeylessSink(t *testing.T) {
 	assert.Equal(t, map[string]string{"A": "1"}, ToMap(res.Entries), "sink content must not appear in entries")
 	require.Len(t, res.Files, 1)
 	assert.Equal(t, "sp.key", res.Files[0].Sink.Name)
-	assert.Equal(t, "KEY_FILE", res.Files[0].Sink.PathAs)
+	assert.Equal(t, sinkKeyFileVar, res.Files[0].Sink.PathAs)
 	assert.Equal(t, "app/dev/sp_key", res.Files[0].Secret)
 	assert.Equal(t, pem, res.Files[0].Content)
 }
@@ -822,13 +827,13 @@ func TestBuildWithFiles_KeyedSinkUsesGetSecretKey(t *testing.T) {
 	ctx := t.Context()
 	client := mocks.NewMockRawClient(t)
 	cfg := fileSinkConfig(
-		config.IncludeEntry{Secret: "app/dev"},
+		config.IncludeEntry{Secret: sinkPrimarySecret},
 		config.IncludeEntry{
 			Secret: "app/dev/bundle", Key: "kubeconfig",
 			File: &config.FileSink{Path: "~/.kube/dev", PathAs: "KUBECONFIG"},
 		},
 	)
-	client.Client.On("GetSecret", mock.Anything, "app/dev").Return(map[string]string{}, nil)
+	client.Client.On("GetSecret", mock.Anything, sinkPrimarySecret).Return(map[string]string{}, nil)
 	client.Client.On("GetSecretKey", mock.Anything, "app/dev/bundle", "kubeconfig").Return("apiVersion: v1\n", nil)
 
 	res, err := NewBuilder(client, cfg, "", "dev").BuildWithFiles(ctx, nil)
@@ -843,10 +848,10 @@ func TestBuildWithFiles_KeylessSinkWithoutRawReaderErrors(t *testing.T) {
 	ctx := t.Context()
 	client := mocks.NewMockClient(t) // no RawReader
 	cfg := fileSinkConfig(
-		config.IncludeEntry{Secret: "app/dev"},
+		config.IncludeEntry{Secret: sinkPrimarySecret},
 		config.IncludeEntry{Secret: "op://vault/item", File: &config.FileSink{Name: "f", PathAs: "F"}},
 	)
-	client.On("GetSecret", mock.Anything, "app/dev").Return(map[string]string{}, nil)
+	client.On("GetSecret", mock.Anything, sinkPrimarySecret).Return(map[string]string{}, nil)
 	client.On("Name").Return("1password")
 
 	_, err := NewBuilder(client, cfg, "", "dev").BuildWithFiles(ctx, nil)
@@ -861,10 +866,10 @@ func TestBuild_NeverFetchesSinkContent(t *testing.T) {
 	ctx := t.Context()
 	client := mocks.NewMockRawClient(t)
 	cfg := fileSinkConfig(
-		config.IncludeEntry{Secret: "app/dev"},
-		config.IncludeEntry{Secret: "app/dev/sp_key", File: &config.FileSink{Name: "sp.key", PathAs: "KEY_FILE"}},
+		config.IncludeEntry{Secret: sinkPrimarySecret},
+		config.IncludeEntry{Secret: "app/dev/sp_key", File: &config.FileSink{Name: "sp.key", PathAs: sinkKeyFileVar}},
 	)
-	client.Client.On("GetSecret", mock.Anything, "app/dev").Return(map[string]string{"A": "1"}, nil)
+	client.Client.On("GetSecret", mock.Anything, sinkPrimarySecret).Return(map[string]string{"A": "1"}, nil)
 	// No GetSecretRaw expectation: a call would fail the mock.
 
 	entries, err := NewBuilder(client, cfg, "", "dev").Build(ctx, nil)
@@ -890,11 +895,11 @@ func TestBuildWithFiles_IncludeAllFalseDoesNotRequireKeyForSink(t *testing.T) {
 	ctx := t.Context()
 	client := mocks.NewMockRawClient(t)
 	cfg := fileSinkConfig(
-		config.IncludeEntry{Secret: "app/dev", Key: "A"},
-		config.IncludeEntry{Secret: "app/dev/sp_key", File: &config.FileSink{Name: "sp.key", PathAs: "KEY_FILE"}},
+		config.IncludeEntry{Secret: sinkPrimarySecret, Key: "A"},
+		config.IncludeEntry{Secret: "app/dev/sp_key", File: &config.FileSink{Name: "sp.key", PathAs: sinkKeyFileVar}},
 	)
 	cfg.IncludeAll = boolPtr(false)
-	client.Client.On("GetSecretKey", mock.Anything, "app/dev", "A").Return("1", nil)
+	client.Client.On("GetSecretKey", mock.Anything, sinkPrimarySecret, "A").Return("1", nil)
 	client.Raw.On("GetSecretRaw", mock.Anything, "app/dev/sp_key").Return([]byte("pem"), nil)
 
 	res, err := NewBuilder(client, cfg, "", "dev").BuildWithFiles(ctx, nil)
@@ -907,10 +912,10 @@ func TestBuildWithFiles_FetchErrorPropagates(t *testing.T) {
 	ctx := t.Context()
 	client := mocks.NewMockRawClient(t)
 	cfg := fileSinkConfig(
-		config.IncludeEntry{Secret: "app/dev"},
+		config.IncludeEntry{Secret: sinkPrimarySecret},
 		config.IncludeEntry{Secret: "app/dev/missing", File: &config.FileSink{Name: "m", PathAs: "M"}},
 	)
-	client.Client.On("GetSecret", mock.Anything, "app/dev").Return(map[string]string{}, nil)
+	client.Client.On("GetSecret", mock.Anything, sinkPrimarySecret).Return(map[string]string{}, nil)
 	client.Raw.On("GetSecretRaw", mock.Anything, "app/dev/missing").
 		Return(nil, &errors.SecretNotFoundError{SecretName: "app/dev/missing"})
 
@@ -918,4 +923,35 @@ func TestBuildWithFiles_FetchErrorPropagates(t *testing.T) {
 	require.Error(t, err)
 	var nf *errors.SecretNotFoundError
 	assert.ErrorAs(t, err, &nf)
+}
+
+func TestBuildWithFiles_BackendQualifiedSinkUsesOwnClient(t *testing.T) {
+	ctx := t.Context()
+	primary := mocks.NewMockClient(t) // 1Password primary, no RawReader
+	awsClient := mocks.NewMockRawClient(t)
+	cfg := fileSinkConfig(
+		config.IncludeEntry{Secret: "op://vault/item", Key: "A"},
+		config.IncludeEntry{
+			Secret: "dev/app/sp_key", Backend: config.BackendAWS,
+			File: &config.FileSink{Name: "sp.key", PathAs: sinkKeyFileVar},
+		},
+	)
+	cfg.IncludeAll = boolPtr(false)
+	primary.On("GetSecretKey", mock.Anything, "op://vault/item", "A").Return("1", nil)
+	awsClient.Raw.On("GetSecretRaw", mock.Anything, "dev/app/sp_key").Return([]byte("pem"), nil)
+
+	b := NewBuilder(primary, cfg, "", "dev")
+	var gotOpts secrets.Options
+	b.newClient = func(_ context.Context, opts secrets.Options) (secrets.Client, error) {
+		gotOpts = opts
+		return awsClient, nil
+	}
+
+	res, err := b.BuildWithFiles(ctx, nil)
+	require.NoError(t, err)
+	require.NotNil(t, gotOpts.Env)
+	assert.Equal(t, config.BackendAWS, cfg.ResolveBackend(gotOpts.Env), "sink must be fetched through an AWS client")
+	assert.Equal(t, map[string]string{"A": "1"}, ToMap(res.Entries))
+	require.Len(t, res.Files, 1)
+	assert.Equal(t, "pem", string(res.Files[0].Content))
 }
