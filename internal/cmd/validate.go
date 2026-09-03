@@ -211,7 +211,7 @@ func validateSources(
 // size. Content never reaches stdout. Persistent paths are checked against
 // the git check-ignore rule so a refusal shows up here and not at run time.
 //
-//nolint:revive,gocognit // CLI output to stdout always succeeds; one branch per sink kind
+//nolint:revive // CLI output to stdout always succeeds
 func validateFileSinks(
 	ctx context.Context,
 	cfg *config.Config,
@@ -261,30 +261,12 @@ func validateFileSinks(
 			}
 		}
 
-		mode, err := src.File.FileMode()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "✗ File sink %s: %v\n", label, err)
+		if !reportFileSink(label, src, content, configDir) {
 			continue
 		}
-
-		target := "<run dir>/" + src.File.Name
-		if src.File.Persistent() {
-			abs, err := filesink.Expand(src.File.Path, configDir)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "✗ File sink %s: %v\n", label, err)
-				continue
-			}
-			if err := filesink.CheckPath(abs); err != nil {
-				fmt.Fprintf(os.Stderr, "✗ File sink %s: %s: %v\n", label, abs, err)
-				continue
-			}
-			target = abs
-		} else {
+		if !src.File.Persistent() {
 			ephemeral = true
 		}
-
-		fmt.Fprintf(os.Stdout, "✓ File sink %s -> %s (%04o, %d bytes)\n", label, target, mode, len(content))
-		clear(content)
 		count++
 	}
 
@@ -293,6 +275,38 @@ func validateFileSinks(
 		count++
 	}
 	return count
+}
+
+// reportFileSink prints the validate line for one already-fetched file sink
+// and zeroes content on every exit path, whether the sink is reported or
+// skipped after a mode or path check fails.
+//
+//nolint:revive // stdout/stderr writes always succeed
+func reportFileSink(label string, src config.IncludeEntry, content []byte, configDir string) bool {
+	defer clear(content)
+
+	mode, err := src.File.FileMode()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "✗ File sink %s: %v\n", label, err)
+		return false
+	}
+
+	target := "<run dir>/" + src.File.Name
+	if src.File.Persistent() {
+		abs, err := filesink.Expand(src.File.Path, configDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "✗ File sink %s: %v\n", label, err)
+			return false
+		}
+		if err := filesink.CheckPath(abs); err != nil {
+			fmt.Fprintf(os.Stderr, "✗ File sink %s: %s: %v\n", label, abs, err)
+			return false
+		}
+		target = abs
+	}
+
+	fmt.Fprintf(os.Stdout, "✓ File sink %s -> %s (%04o, %d bytes)\n", label, target, mode, len(content))
+	return true
 }
 
 // clientForValidate returns the appropriate secrets client for a source entry.
