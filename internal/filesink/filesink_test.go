@@ -167,3 +167,52 @@ func TestWritePersistent_RelativeResolvesAgainstConfigDir(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(cfgDir, "state", "f"), p)
 }
+
+func TestWriteEphemeral_FailedRenameLeavesNoTempFile(t *testing.T) {
+	d, err := filesink.NewEphemeral()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Close() })
+
+	target := filepath.Join(d.Path(), "target")
+	require.NoError(t, os.Mkdir(target, 0o700))
+	victim := filepath.Join(target, "victim")
+	require.NoError(t, os.WriteFile(victim, []byte("keep"), 0o600))
+
+	_, err = d.WriteEphemeral("target", []byte("x"), 0o600)
+	require.Error(t, err, "rename over a non-empty directory must fail")
+
+	entries, err := os.ReadDir(d.Path())
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "only the pre-existing target directory may remain")
+	assert.Equal(t, "target", entries[0].Name())
+	for _, e := range entries {
+		assert.False(t, strings.HasPrefix(e.Name(), ".target.tmp-"), "no leftover temp file")
+	}
+
+	got, err := os.ReadFile(victim)
+	require.NoError(t, err)
+	assert.Equal(t, "keep", string(got), "the pre-existing file must be untouched")
+}
+
+func TestWritePersistent_FailedRenameLeavesNoTempFile(t *testing.T) {
+	base := t.TempDir()
+	target := filepath.Join(base, "target")
+	require.NoError(t, os.Mkdir(target, 0o700))
+	victim := filepath.Join(target, "victim")
+	require.NoError(t, os.WriteFile(victim, []byte("keep"), 0o600))
+
+	_, err := filesink.WritePersistent(target, base, []byte("x"), 0o600)
+	require.Error(t, err, "rename over a non-empty directory must fail")
+
+	entries, err := os.ReadDir(base)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "only the pre-existing target directory may remain")
+	assert.Equal(t, "target", entries[0].Name())
+	for _, e := range entries {
+		assert.False(t, strings.HasPrefix(e.Name(), ".target.tmp-"), "no leftover temp file")
+	}
+
+	got, err := os.ReadFile(victim)
+	require.NoError(t, err)
+	assert.Equal(t, "keep", string(got), "the pre-existing file must be untouched")
+}
