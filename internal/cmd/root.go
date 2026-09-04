@@ -92,18 +92,32 @@ func executeRoot() int {
 	return 1
 }
 
-// signalContext returns a context that the first SIGINT or SIGTERM cancels,
-// and a stop that releases the handler. Once the first signal has cancelled
-// the context, the handler is released too. A second signal then gets the
-// default disposition and kills the process, so a command that ignores its
-// context still dies on a second Ctrl-C.
+const (
+	// signalExitBase is the shell convention for a process killed by a
+	// signal: 128 plus the signal number.
+	signalExitBase = 128
+	// pendingSignals buffers the signal that cancels the context and the one
+	// that forces the exit.
+	pendingSignals = 2
+)
+
+// signalContext returns a context cancelled by the first SIGINT or SIGTERM.
+// A second signal exits the process with 128 plus the signal number, the
+// same status a shell reports for a process killed by that signal.
 func signalContext() (context.Context, context.CancelFunc) {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := context.WithCancel(context.Background())
+	sigs := make(chan os.Signal, pendingSignals)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-ctx.Done()
-		stop()
+		<-sigs
+		cancel()
+		s := <-sigs
+		if n, ok := s.(syscall.Signal); ok {
+			os.Exit(signalExitBase + int(n))
+		}
+		os.Exit(1)
 	}()
-	return ctx, stop
+	return ctx, func() { signal.Stop(sigs); cancel() }
 }
 
 // commandContext returns the context cobra attached to cmd. It falls back to
