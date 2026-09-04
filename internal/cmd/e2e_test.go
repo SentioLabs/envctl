@@ -281,6 +281,56 @@ waitLoop:
 	assert.True(t, os.IsNotExist(statErr), "run dir must be removed after SIGINT; stderr: %s", stderr.String())
 }
 
+// TestE2E_RunSecondSIGINTStillWaitsForChild proves run releases the root
+// signal handler. With the force exit still armed, the second SIGINT would
+// end envctl immediately, skipping the deferred cleanup that removes the run
+// directory and its secret files.
+func TestE2E_RunSecondSIGINTStillWaitsForChild(t *testing.T) {
+	configPath, secretsPath := e2eFixture(t, "")
+	out := t.TempDir()
+
+	// The child ignores SIGINT and exits on its own, so envctl can only exit
+	// zero by waiting for it rather than by being killed.
+	cmd, _, stderr := envctlCmd(t, secretsPath, []string{"OUT=" + out},
+		"-c", configPath, "run", "--", "sh", "-c",
+		`trap "" INT; `+e2eChildScript(`sleep 2; exit 0`))
+	require.NoError(t, cmd.Start())
+
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(filepath.Join(out, "ready"))
+		return err == nil
+	}, 15*time.Second, 20*time.Millisecond, "child never started; stderr: %s", stderr.String())
+
+	// Keep signalling until envctl exits. Two calls back to back are not
+	// enough, because a second instance of the same signal is coalesced away
+	// while the first is still pending, and the force exit would never see it.
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	resend := time.NewTicker(100 * time.Millisecond)
+	defer resend.Stop()
+	require.NoError(t, cmd.Process.Signal(syscall.SIGINT))
+
+	var waitErr error
+waitLoop:
+	for {
+		select {
+		case waitErr = <-done:
+			break waitLoop
+		case <-resend.C:
+			_ = cmd.Process.Signal(syscall.SIGINT)
+		case <-time.After(20 * time.Second):
+			_ = cmd.Process.Kill()
+			t.Fatal("envctl never exited")
+		}
+	}
+	require.NoError(t, waitErr,
+		"envctl must wait for the child instead of exiting on a later signal; stderr: %s", stderr.String())
+
+	_, statErr := os.Stat(readMarker(t, out, "dir"))
+	assert.True(t, os.IsNotExist(statErr), "run dir must be removed; stderr: %s", stderr.String())
+}
+
 func TestE2E_EnvSkipsEphemeralAndNeverPrintsContent(t *testing.T) {
 	configPath, secretsPath := e2eFixture(t, "")
 	stdout, stderr, code := runEnvctl(t, secretsPath, nil, "-c", configPath, "env")

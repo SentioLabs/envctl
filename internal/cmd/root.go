@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"sync"
 	"syscall"
 
 	"github.com/sentiolabs/envctl/internal/cache"
@@ -101,6 +102,13 @@ const (
 	pendingSignals = 2
 )
 
+// rootSignals is the channel signalContext armed, guarded because the
+// command goroutine releases it while the handler goroutine reads it.
+var (
+	rootSignalsMu sync.Mutex
+	rootSignals   chan os.Signal
+)
+
 // signalContext returns a context cancelled by the first SIGINT or SIGTERM.
 // A second signal exits the process with 128 plus the signal number, the
 // same status a shell reports for a process killed by that signal.
@@ -108,6 +116,9 @@ func signalContext() (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	sigs := make(chan os.Signal, pendingSignals)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	rootSignalsMu.Lock()
+	rootSignals = sigs
+	rootSignalsMu.Unlock()
 	go func() {
 		<-sigs
 		cancel()
@@ -118,6 +129,21 @@ func signalContext() (context.Context, context.CancelFunc) {
 		os.Exit(1)
 	}()
 	return ctx, func() { signal.Stop(sigs); cancel() }
+}
+
+// releaseRootSignals stops the root handler so the force exit in
+// signalContext can never fire. A command that forwards signals to a child
+// and waits for it calls this, because an os.Exit from the handler goroutine
+// would skip that command's deferred cleanup. Calling it before anything is
+// armed, or more than once, does nothing.
+func releaseRootSignals() {
+	rootSignalsMu.Lock()
+	defer rootSignalsMu.Unlock()
+	if rootSignals == nil {
+		return
+	}
+	signal.Stop(rootSignals)
+	rootSignals = nil
 }
 
 // commandContext returns the context cobra attached to cmd. It falls back to

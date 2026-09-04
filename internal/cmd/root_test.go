@@ -199,3 +199,29 @@ func TestCommandContextFallsBackToBackground(t *testing.T) {
 	withCtx.SetContext(ctx)
 	assert.Equal(t, ctx, commandContext(withCtx))
 }
+
+// TestReleaseRootSignalsIsSafeBeforeArmingAndIdempotent covers the two calls
+// that must do nothing: one before any handler exists and a repeat.
+func TestReleaseRootSignalsIsSafeBeforeArmingAndIdempotent(t *testing.T) {
+	rootSignalsMu.Lock()
+	rootSignals = nil
+	rootSignalsMu.Unlock()
+
+	releaseRootSignals()
+
+	ctx, stop := signalContext()
+	defer stop()
+	rootSignalsMu.Lock()
+	armed := rootSignals
+	rootSignalsMu.Unlock()
+	require.NotNil(t, armed, "signalContext must record the channel it armed")
+
+	releaseRootSignals()
+	releaseRootSignals()
+
+	rootSignalsMu.Lock()
+	released := rootSignals
+	rootSignalsMu.Unlock()
+	assert.Nil(t, released)
+	assert.NoError(t, ctx.Err(), "releasing the handler must not cancel the context")
+}
