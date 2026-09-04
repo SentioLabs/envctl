@@ -28,7 +28,10 @@ Supported formats:
 Example:
   eval "$(envctl export)"
   eval "$(envctl export --format shell)"
-  envctl export --format json | jq .`,
+  envctl export --format json | jq .
+
+Sources with file.path are written and their path_as variables included.
+Sources with file.name are skipped: only envctl run materializes them.`,
 		RunE: runExport,
 	}
 )

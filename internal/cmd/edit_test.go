@@ -23,14 +23,14 @@ func TestEditCmdVaultFlag(t *testing.T) {
 	flag := editCmd.Flags().Lookup("vault")
 	require.NotNil(t, flag, "--vault flag should be registered")
 	assert.Equal(t, "string", flag.Value.Type())
-	assert.Equal(t, "", flag.DefValue)
+	assert.Empty(t, flag.DefValue)
 }
 
 func TestEditCmdItemFlag(t *testing.T) {
 	flag := editCmd.Flags().Lookup("item")
 	require.NotNil(t, flag, "--item flag should be registered")
 	assert.Equal(t, "string", flag.Value.Type())
-	assert.Equal(t, "", flag.DefValue)
+	assert.Empty(t, flag.DefValue)
 }
 
 func TestEditCmdBrowseFlag(t *testing.T) {

@@ -1,0 +1,6 @@
+version: 1
+environments:
+  dev:
+    - secret: api/dev
+    - secret: api/dev/a
+      file: { name: a.pem }

@@ -1,6 +1,6 @@
 module github.com/sentiolabs/envctl
 
-go 1.26
+go 1.27.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.1

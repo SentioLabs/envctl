@@ -1,3 +1,4 @@
+//nolint:testpackage // Testing internal functions requires same package
 package tui
 
 import (
@@ -13,24 +14,10 @@ func visualTestFields() []secrets.Field {
 	return []secrets.Field{
 		{ID: "1", Key: "APP_SERVER_PORT", Value: "8080", Type: secrets.FieldText},
 		{ID: "2", Key: "DATABASE_URL", Value: "postgres://localhost:5432/mydb", Type: secrets.FieldConcealed},
-		{ID: "3", Key: "REDIS_HOST", Value: "localhost", Type: secrets.FieldText},
+		{ID: "3", Key: "REDIS_HOST", Value: testHostLocalhost, Type: secrets.FieldText},
 		{ID: "4", Key: "API_KEY", Value: "sk-1234567890", Type: secrets.FieldConcealed},
-		{ID: "5", Key: "APP_ENV", Value: "local", Type: secrets.FieldText},
+		{ID: "5", Key: "APP_ENV", Value: testEnvLocal, Type: secrets.FieldText},
 	}
-}
-
-// manyFields generates n fields for viewport scroll testing.
-func manyFields(n int) []secrets.Field {
-	fields := make([]secrets.Field, n)
-	for i := range n {
-		fields[i] = secrets.Field{
-			ID:    string(rune('a' + i%26)),
-			Key:   "FIELD_" + string(rune('A'+i%26)) + string(rune('0'+i/26)),
-			Value: "value-" + string(rune('0'+i%10)),
-			Type:  secrets.FieldText,
-		}
-	}
-	return fields
 }
 
 // sendKey is a helper that sends a key and returns the updated editor.

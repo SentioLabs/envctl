@@ -10,6 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// testRegion is the AWS region used across cache key tests.
+const testRegion = "us-east-1"
+
 func TestEntry_IsExpired(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -96,7 +99,7 @@ func TestKey(t *testing.T) {
 	}{
 		{
 			name:       "basic key",
-			region:     "us-east-1",
+			region:     testRegion,
 			secretName: "my-app/dev",
 		},
 		{
@@ -106,12 +109,12 @@ func TestKey(t *testing.T) {
 		},
 		{
 			name:       "different secret",
-			region:     "us-east-1",
+			region:     testRegion,
 			secretName: "other-app/prod",
 		},
 		{
 			name:       "special characters in secret",
-			region:     "us-east-1",
+			region:     testRegion,
 			secretName: "my/app/with/slashes",
 		},
 	}
@@ -136,8 +139,8 @@ func TestKey(t *testing.T) {
 	}
 
 	// Different inputs should produce different keys
-	key1 := Key("us-east-1", "secret1")
-	key2 := Key("us-east-1", "secret2")
+	key1 := Key(testRegion, "secret1")
+	key2 := Key(testRegion, "secret2")
 	key3 := Key("us-west-2", "secret1")
 	assert.NotEqual(t, key1, key2, "different secrets should have different keys")
 	assert.NotEqual(t, key1, key3, "different regions should have different keys")

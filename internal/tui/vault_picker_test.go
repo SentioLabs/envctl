@@ -11,7 +11,7 @@ import (
 
 func testVaults() []secrets.Vault {
 	return []secrets.Vault{
-		{ID: "vault-1", Name: "Development"},
+		{ID: testVaultID, Name: "Development"},
 		{ID: "vault-2", Name: "Staging"},
 		{ID: "vault-3", Name: "Production"},
 	}
@@ -53,8 +53,8 @@ func TestVaultPickerUpdate(t *testing.T) {
 		if updated.Selected().Name != "Development" {
 			t.Errorf("expected selected vault name %q, got %q", "Development", updated.Selected().Name)
 		}
-		if updated.Selected().ID != "vault-1" {
-			t.Errorf("expected selected vault ID %q, got %q", "vault-1", updated.Selected().ID)
+		if updated.Selected().ID != testVaultID {
+			t.Errorf("expected selected vault ID %q, got %q", testVaultID, updated.Selected().ID)
 		}
 	})
 

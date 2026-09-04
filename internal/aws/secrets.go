@@ -3,6 +3,7 @@ package aws
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	stderrors "errors"
 	"sort"
@@ -25,9 +26,24 @@ const (
 	baseBackoff = 100 * time.Millisecond
 )
 
+// rawCachePrefix namespaces raw cache entries so they never collide with parsed ones.
+const rawCachePrefix = "raw:"
+
+// rawCacheKey is the single key inside a raw cache entry's map.
+const rawCacheKey = "_raw"
+
+// secretValueAPI is the one Secrets Manager call this client needs.
+type secretValueAPI interface {
+	GetSecretValue(
+		ctx context.Context,
+		params *secretsmanager.GetSecretValueInput,
+		optFns ...func(*secretsmanager.Options),
+	) (*secretsmanager.GetSecretValueOutput, error)
+}
+
 // SecretsClient provides access to AWS Secrets Manager.
 type SecretsClient struct {
-	client  *secretsmanager.Client
+	client  secretValueAPI
 	region  string
 	cache   *cache.Manager
 	noCache bool
@@ -98,40 +114,11 @@ func (c *SecretsClient) GetSecret(ctx context.Context, secretName string) (map[s
 	return secrets, nil
 }
 
-// fetchSecret retrieves a secret from AWS with retry logic.
+// fetchSecret retrieves a secret from AWS and parses it into key-value pairs.
 func (c *SecretsClient) fetchSecret(ctx context.Context, secretName string) (map[string]string, error) {
-	input := &secretsmanager.GetSecretValueInput{
-		SecretId: aws.String(secretName),
-	}
-
-	var result *secretsmanager.GetSecretValueOutput
-	var err error
-
-	// Retry with exponential backoff
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		result, err = c.client.GetSecretValue(ctx, input)
-		if err == nil {
-			break
-		}
-
-		// Don't retry on certain errors
-		if isNonRetryableError(err) {
-			break
-		}
-
-		// Wait before retrying
-		if attempt < maxRetries-1 {
-			backoff := baseBackoff * time.Duration(1<<uint(attempt))
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(backoff):
-			}
-		}
-	}
-
+	result, err := c.getSecretValue(ctx, secretName)
 	if err != nil {
-		return nil, mapAWSError(secretName, err)
+		return nil, err
 	}
 
 	if result.SecretString == nil {
@@ -146,6 +133,41 @@ func (c *SecretsClient) fetchSecret(ctx context.Context, secretName string) (map
 
 	// Fall back to plain text - expose as "_value" key
 	return map[string]string{"_value": strings.TrimSpace(*result.SecretString)}, nil
+}
+
+// getSecretValue calls GetSecretValue with exponential backoff on retryable errors.
+func (c *SecretsClient) getSecretValue(
+	ctx context.Context, secretName string,
+) (*secretsmanager.GetSecretValueOutput, error) {
+	input := &secretsmanager.GetSecretValueInput{
+		SecretId: aws.String(secretName),
+	}
+
+	var result *secretsmanager.GetSecretValueOutput
+	var err error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		result, err = c.client.GetSecretValue(ctx, input)
+		if err == nil {
+			break
+		}
+		if isNonRetryableError(err) {
+			break
+		}
+		if attempt < maxRetries-1 {
+			backoff := baseBackoff * time.Duration(1<<uint(attempt))
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+	}
+
+	if err != nil {
+		return nil, mapAWSError(secretName, err)
+	}
+	return result, nil
 }
 
 // GetSecretKey retrieves a specific key from a secret.
@@ -172,6 +194,62 @@ func (c *SecretsClient) GetSecretKey(ctx context.Context, secretName, key string
 	}
 
 	return value, nil
+}
+
+// GetSecretRaw returns the secret's content verbatim. SecretString is returned
+// byte-for-byte with no JSON parsing and no whitespace trimming. SecretBinary is
+// returned when the secret holds binary data. Raw entries share the cache TTL
+// and the noCache/refresh flags with parsed entries but live under their own key.
+func (c *SecretsClient) GetSecretRaw(ctx context.Context, secretName string) ([]byte, error) {
+	cacheName := rawCachePrefix + secretName
+
+	if c.cache != nil && !c.noCache && !c.refresh {
+		if data, ok := c.rawFromCache(cacheName); ok {
+			return data, nil
+		}
+	}
+
+	result, err := c.getSecretValue(ctx, secretName)
+	if err != nil {
+		return nil, err
+	}
+
+	var data []byte
+	switch {
+	case result.SecretString != nil:
+		data = []byte(*result.SecretString)
+	case len(result.SecretBinary) > 0:
+		data = result.SecretBinary
+	default:
+		return nil, &errors.InvalidSecretFormatError{SecretName: secretName}
+	}
+
+	if c.cache != nil && !c.noCache {
+		_ = c.cache.Set(c.region, cacheName, map[string]string{
+			rawCacheKey: base64.StdEncoding.EncodeToString(data),
+		})
+	}
+
+	return data, nil
+}
+
+// rawFromCache looks up a raw entry and decodes its base64 payload.
+// It returns false on any cache miss or decode failure so the caller falls
+// back to fetching from AWS.
+func (c *SecretsClient) rawFromCache(cacheName string) ([]byte, bool) {
+	cached, err := c.cache.Get(c.region, cacheName)
+	if err != nil || cached == nil {
+		return nil, false
+	}
+	enc, ok := cached[rawCacheKey]
+	if !ok {
+		return nil, false
+	}
+	data, err := base64.StdEncoding.DecodeString(enc)
+	if err != nil {
+		return nil, false
+	}
+	return data, true
 }
 
 // isNonRetryableError checks if an error should not be retried.

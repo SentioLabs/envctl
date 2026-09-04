@@ -17,61 +17,61 @@ func TestParseReference(t *testing.T) {
 		errSubstr string
 	}{
 		{
-			name:  "item only",
-			input: "MyItem",
+			name:  caseItemOnly,
+			input: testItem,
 			want: &Reference{
-				Item: "MyItem",
+				Item: testItem,
 			},
 		},
 		{
-			name:  "vault/item",
-			input: "MyVault/MyItem",
+			name:  caseVaultItem,
+			input: testRefVaultItem,
 			want: &Reference{
-				Vault: "MyVault",
-				Item:  "MyItem",
+				Vault: testVault,
+				Item:  testItem,
 			},
 		},
 		{
 			name:  "vault/item/field",
 			input: "MyVault/MyItem/password",
 			want: &Reference{
-				Vault: "MyVault",
-				Item:  "MyItem",
-				Field: "password",
+				Vault: testVault,
+				Item:  testItem,
+				Field: testFieldPassword,
 			},
 		},
 		{
 			name:  "vault/item/section/field",
 			input: "MyVault/MyItem/login/password",
 			want: &Reference{
-				Vault:   "MyVault",
-				Item:    "MyItem",
-				Section: "login",
-				Field:   "password",
+				Vault:   testVault,
+				Item:    testItem,
+				Section: testSectionLogin,
+				Field:   testFieldPassword,
 			},
 		},
 		{
 			name:  "op:// prefix - item only",
 			input: "op://MyItem",
 			want: &Reference{
-				Item: "MyItem",
+				Item: testItem,
 			},
 		},
 		{
 			name:  "op:// prefix - vault/item",
 			input: "op://MyVault/MyItem",
 			want: &Reference{
-				Vault: "MyVault",
-				Item:  "MyItem",
+				Vault: testVault,
+				Item:  testItem,
 			},
 		},
 		{
 			name:  "op:// prefix - vault/item/field",
-			input: "op://MyVault/MyItem/password",
+			input: testRefFull,
 			want: &Reference{
-				Vault: "MyVault",
-				Item:  "MyItem",
-				Field: "password",
+				Vault: testVault,
+				Item:  testItem,
+				Field: testFieldPassword,
 			},
 		},
 		{
@@ -100,19 +100,19 @@ func TestParseReference(t *testing.T) {
 			name:      "empty vault",
 			input:     "/MyItem",
 			wantErr:   true,
-			errSubstr: "invalid reference format",
+			errSubstr: msgInvalidRefFormat,
 		},
 		{
 			name:      "empty item",
 			input:     "MyVault/",
 			wantErr:   true,
-			errSubstr: "invalid reference format",
+			errSubstr: msgInvalidRefFormat,
 		},
 		{
 			name:      "too many parts",
 			input:     "a/b/c/d/e",
 			wantErr:   true,
-			errSubstr: "invalid reference format",
+			errSubstr: msgInvalidRefFormat,
 		},
 	}
 
@@ -142,23 +142,23 @@ func TestReference_String(t *testing.T) {
 		want string
 	}{
 		{
-			name: "item only",
-			ref:  Reference{Item: "MyItem"},
+			name: caseItemOnly,
+			ref:  Reference{Item: testItem},
 			want: "op://MyItem",
 		},
 		{
-			name: "vault/item",
-			ref:  Reference{Vault: "MyVault", Item: "MyItem"},
+			name: caseVaultItem,
+			ref:  Reference{Vault: testVault, Item: testItem},
 			want: "op://MyVault/MyItem",
 		},
 		{
 			name: "vault/item/field",
-			ref:  Reference{Vault: "MyVault", Item: "MyItem", Field: "password"},
-			want: "op://MyVault/MyItem/password",
+			ref:  Reference{Vault: testVault, Item: testItem, Field: testFieldPassword},
+			want: testRefFull,
 		},
 		{
 			name: "vault/item/section/field",
-			ref:  Reference{Vault: "MyVault", Item: "MyItem", Section: "login", Field: "password"},
+			ref:  Reference{Vault: testVault, Item: testItem, Section: testSectionLogin, Field: testFieldPassword},
 			want: "op://MyVault/MyItem/login/password",
 		},
 	}
@@ -208,19 +208,19 @@ func TestReference_ItemRef(t *testing.T) {
 		want string
 	}{
 		{
-			name: "item only",
-			ref:  Reference{Item: "MyItem"},
-			want: "MyItem",
+			name: caseItemOnly,
+			ref:  Reference{Item: testItem},
+			want: testItem,
 		},
 		{
-			name: "vault/item",
-			ref:  Reference{Vault: "MyVault", Item: "MyItem"},
-			want: "MyVault/MyItem",
+			name: caseVaultItem,
+			ref:  Reference{Vault: testVault, Item: testItem},
+			want: testRefVaultItem,
 		},
 		{
 			name: "vault/item/field - returns without field",
-			ref:  Reference{Vault: "MyVault", Item: "MyItem", Field: "password"},
-			want: "MyVault/MyItem",
+			ref:  Reference{Vault: testVault, Item: testItem, Field: testFieldPassword},
+			want: testRefVaultItem,
 		},
 	}
 
@@ -239,22 +239,22 @@ func TestReference_CLIArgs(t *testing.T) {
 	}{
 		{
 			name: "item only - uses item get",
-			ref:  Reference{Item: "MyItem"},
-			want: []string{"item", "get", "MyItem", "--format", "json"},
+			ref:  Reference{Item: testItem},
+			want: []string{cmdItem, "get", testItem, flagFormat, formatJSON},
 		},
 		{
 			name: "vault/item - uses item get with vault",
-			ref:  Reference{Vault: "MyVault", Item: "MyItem"},
-			want: []string{"item", "get", "MyItem", "--format", "json", "--vault", "MyVault"},
+			ref:  Reference{Vault: testVault, Item: testItem},
+			want: []string{cmdItem, "get", testItem, flagFormat, formatJSON, flagVault, testVault},
 		},
 		{
 			name: "with field - uses read",
-			ref:  Reference{Vault: "MyVault", Item: "MyItem", Field: "password"},
-			want: []string{"read", "op://MyVault/MyItem/password"},
+			ref:  Reference{Vault: testVault, Item: testItem, Field: testFieldPassword},
+			want: []string{"read", testRefFull},
 		},
 		{
 			name: "with section and field - uses read",
-			ref:  Reference{Vault: "MyVault", Item: "MyItem", Section: "login", Field: "password"},
+			ref:  Reference{Vault: testVault, Item: testItem, Section: testSectionLogin, Field: testFieldPassword},
 			want: []string{"read", "op://MyVault/MyItem/login/password"},
 		},
 	}

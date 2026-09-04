@@ -4,7 +4,23 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+)
+
+// Fixture values shared by the config and resolver tests.
+const (
+	testSecret             = "test"
+	testSecretMyappDev     = "myapp/dev"
+	testSecretMyappStaging = "myapp/staging"
+	testRegionUSEast       = "us-east-1"
+	testRegionEUWest       = "eu-west-1"
+	testVaultDev           = "Dev"
+	testVaultStaging       = "Staging"
+	testProfileDefault     = "default"
+	testAccount            = "my-account"
+	testKeyAPIKey          = "api_key"
+	testKeyDatabaseURL     = "DATABASE_URL"
 )
 
 // loadFixture reads a YAML fixture file from testdata/ and writes it to a temp
@@ -17,6 +33,7 @@ func loadFixture(t *testing.T, name string) string {
 	}
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, ConfigFileName)
+	//nolint:gosec // G703: configPath is built from t.TempDir(), not attacker input
 	if err := os.WriteFile(configPath, data, 0o600); err != nil {
 		t.Fatalf("failed to write test config: %v", err)
 	}
@@ -160,6 +177,7 @@ func TestFindConfigFrom(t *testing.T) {
 		t.Fatalf("failed to read fixture: %v", err)
 	}
 	configPath := filepath.Join(tmpDir, ConfigFileName)
+	//nolint:gosec // G703: configPath is built from t.TempDir(), not attacker input
 	if err := os.WriteFile(configPath, data, 0o600); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
@@ -181,8 +199,8 @@ func TestGetEnvironment(t *testing.T) {
 		Version:            1,
 		DefaultEnvironment: "dev",
 		Environments: map[string]Environment{
-			"dev":     NewEnvironment(IncludeEntry{Secret: "myapp/dev"}),
-			"staging": NewEnvironment(IncludeEntry{Secret: "myapp/staging"}),
+			"dev":     NewEnvironment(IncludeEntry{Secret: testSecretMyappDev}),
+			"staging": NewEnvironment(IncludeEntry{Secret: testSecretMyappStaging}),
 		},
 	}
 
@@ -195,13 +213,13 @@ func TestGetEnvironment(t *testing.T) {
 		{
 			name:       "explicit environment",
 			envName:    "staging",
-			wantSecret: "myapp/staging",
+			wantSecret: testSecretMyappStaging,
 			wantErr:    false,
 		},
 		{
 			name:       "default environment",
 			envName:    "",
-			wantSecret: "myapp/dev",
+			wantSecret: testSecretMyappDev,
 			wantErr:    false,
 		},
 		{
@@ -265,65 +283,67 @@ func TestResolveBackend(t *testing.T) {
 	}{
 		{
 			name:   "env 1pass overrides global aws",
-			config: &Config{Version: 1, AWS: &AWSConfig{Region: "us-east-1"}},
-			env:    envPtr(NewEnvironment(IncludeEntry{Secret: "test", OnePass: &OnePassConfig{Vault: "Dev"}})),
-			want:   Backend1Pass,
+			config: &Config{Version: 1, AWS: &AWSConfig{Region: testRegionUSEast}},
+			env: envPtr(NewEnvironment(IncludeEntry{
+				Secret: testSecret, OnePass: &OnePassConfig{Vault: testVaultDev},
+			})),
+			want: Backend1Pass,
 		},
 		{
 			name:   "env aws explicit",
 			config: &Config{Version: 1},
-			env:    envPtr(NewEnvironment(IncludeEntry{Secret: "test", AWS: &AWSConfig{Region: "eu-west-1"}})),
+			env:    envPtr(NewEnvironment(IncludeEntry{Secret: testSecret, AWS: &AWSConfig{Region: testRegionEUWest}})),
 			want:   BackendAWS,
 		},
 		{
 			name:   "inherit global 1pass",
-			config: &Config{Version: 1, OnePass: &OnePassConfig{Vault: "Dev"}},
-			env:    envPtr(NewEnvironment(IncludeEntry{Secret: "test"})),
+			config: &Config{Version: 1, OnePass: &OnePassConfig{Vault: testVaultDev}},
+			env:    envPtr(NewEnvironment(IncludeEntry{Secret: testSecret})),
 			want:   Backend1Pass,
 		},
 		{
 			name:   "inherit global aws",
-			config: &Config{Version: 1, AWS: &AWSConfig{Region: "us-east-1"}},
-			env:    envPtr(NewEnvironment(IncludeEntry{Secret: "test"})),
+			config: &Config{Version: 1, AWS: &AWSConfig{Region: testRegionUSEast}},
+			env:    envPtr(NewEnvironment(IncludeEntry{Secret: testSecret})),
 			want:   BackendAWS,
 		},
 		{
 			name:   "default to aws when nothing set",
 			config: &Config{Version: 1},
-			env:    envPtr(NewEnvironment(IncludeEntry{Secret: "test"})),
+			env:    envPtr(NewEnvironment(IncludeEntry{Secret: testSecret})),
 			want:   BackendAWS,
 		},
 		{
 			name:   "nil env falls back to global",
-			config: &Config{Version: 1, OnePass: &OnePassConfig{Vault: "Dev"}},
+			config: &Config{Version: 1, OnePass: &OnePassConfig{Vault: testVaultDev}},
 			env:    nil,
 			want:   Backend1Pass,
 		},
 		{
 			name: "both global backends default_backend 1pass resolves to 1pass",
 			config: &Config{
-				Version: 1, AWS: &AWSConfig{Region: "us-east-1"},
-				OnePass: &OnePassConfig{Vault: "Dev"}, DefaultBackend: Backend1Pass,
+				Version: 1, AWS: &AWSConfig{Region: testRegionUSEast},
+				OnePass: &OnePassConfig{Vault: testVaultDev}, DefaultBackend: Backend1Pass,
 			},
-			env:  envPtr(NewEnvironment(IncludeEntry{Secret: "test"})),
+			env:  envPtr(NewEnvironment(IncludeEntry{Secret: testSecret})),
 			want: Backend1Pass,
 		},
 		{
 			name: "both global backends default_backend aws resolves to aws",
 			config: &Config{
-				Version: 1, AWS: &AWSConfig{Region: "us-east-1"},
-				OnePass: &OnePassConfig{Vault: "Dev"}, DefaultBackend: BackendAWS,
+				Version: 1, AWS: &AWSConfig{Region: testRegionUSEast},
+				OnePass: &OnePassConfig{Vault: testVaultDev}, DefaultBackend: BackendAWS,
 			},
-			env:  envPtr(NewEnvironment(IncludeEntry{Secret: "test"})),
+			env:  envPtr(NewEnvironment(IncludeEntry{Secret: testSecret})),
 			want: BackendAWS,
 		},
 		{
 			name: "both global backends env backend aws overrides default_backend 1pass",
 			config: &Config{
-				Version: 1, AWS: &AWSConfig{Region: "us-east-1"},
-				OnePass: &OnePassConfig{Vault: "Dev"}, DefaultBackend: Backend1Pass,
+				Version: 1, AWS: &AWSConfig{Region: testRegionUSEast},
+				OnePass: &OnePassConfig{Vault: testVaultDev}, DefaultBackend: Backend1Pass,
 			},
-			env:  envPtr(NewEnvironment(IncludeEntry{Secret: "test", Backend: BackendAWS})),
+			env:  envPtr(NewEnvironment(IncludeEntry{Secret: testSecret, Backend: BackendAWS})),
 			want: BackendAWS,
 		},
 	}
@@ -351,37 +371,41 @@ func TestResolveAWSConfig(t *testing.T) {
 	}{
 		{
 			name:        "global only",
-			config:      &Config{Version: 1, AWS: &AWSConfig{Region: "us-east-1", Profile: "default"}},
-			env:         envPtr(NewEnvironment(IncludeEntry{Secret: "test"})),
-			wantRegion:  "us-east-1",
-			wantProfile: "default",
+			config:      &Config{Version: 1, AWS: &AWSConfig{Region: testRegionUSEast, Profile: testProfileDefault}},
+			env:         envPtr(NewEnvironment(IncludeEntry{Secret: testSecret})),
+			wantRegion:  testRegionUSEast,
+			wantProfile: testProfileDefault,
 		},
 		{
-			name:        "env only",
-			config:      &Config{Version: 1},
-			env:         envPtr(NewEnvironment(IncludeEntry{Secret: "test", AWS: &AWSConfig{Region: "eu-west-1"}})),
-			wantRegion:  "eu-west-1",
+			name:   "env only",
+			config: &Config{Version: 1},
+			env: envPtr(NewEnvironment(IncludeEntry{
+				Secret: testSecret, AWS: &AWSConfig{Region: testRegionEUWest},
+			})),
+			wantRegion:  testRegionEUWest,
 			wantProfile: "",
 		},
 		{
-			name:        "env overrides global region",
-			config:      &Config{Version: 1, AWS: &AWSConfig{Region: "us-east-1", Profile: "default"}},
-			env:         envPtr(NewEnvironment(IncludeEntry{Secret: "test", AWS: &AWSConfig{Region: "eu-west-1"}})),
-			wantRegion:  "eu-west-1",
-			wantProfile: "default",
+			name:   "env overrides global region",
+			config: &Config{Version: 1, AWS: &AWSConfig{Region: testRegionUSEast, Profile: testProfileDefault}},
+			env: envPtr(NewEnvironment(IncludeEntry{
+				Secret: testSecret, AWS: &AWSConfig{Region: testRegionEUWest},
+			})),
+			wantRegion:  testRegionEUWest,
+			wantProfile: testProfileDefault,
 		},
 		{
 			name:        "neither set",
 			config:      &Config{Version: 1},
-			env:         envPtr(NewEnvironment(IncludeEntry{Secret: "test"})),
+			env:         envPtr(NewEnvironment(IncludeEntry{Secret: testSecret})),
 			wantRegion:  "",
 			wantProfile: "",
 		},
 		{
 			name:        "nil env",
-			config:      &Config{Version: 1, AWS: &AWSConfig{Region: "us-east-1"}},
+			config:      &Config{Version: 1, AWS: &AWSConfig{Region: testRegionUSEast}},
 			env:         nil,
-			wantRegion:  "us-east-1",
+			wantRegion:  testRegionUSEast,
 			wantProfile: "",
 		},
 	}
@@ -409,42 +433,42 @@ func TestResolveOnePassConfig(t *testing.T) {
 	}{
 		{
 			name:        "global only",
-			config:      &Config{Version: 1, OnePass: &OnePassConfig{Vault: "Dev", Account: "my-account"}},
-			env:         envPtr(NewEnvironment(IncludeEntry{Secret: "test"})),
-			wantVault:   "Dev",
-			wantAccount: "my-account",
+			config:      &Config{Version: 1, OnePass: &OnePassConfig{Vault: testVaultDev, Account: testAccount}},
+			env:         envPtr(NewEnvironment(IncludeEntry{Secret: testSecret})),
+			wantVault:   testVaultDev,
+			wantAccount: testAccount,
 		},
 		{
 			name:   "env only",
 			config: &Config{Version: 1},
 			env: envPtr(NewEnvironment(IncludeEntry{
-				Secret: "test", OnePass: &OnePassConfig{Vault: "Staging"},
+				Secret: testSecret, OnePass: &OnePassConfig{Vault: testVaultStaging},
 			})),
-			wantVault:   "Staging",
+			wantVault:   testVaultStaging,
 			wantAccount: "",
 		},
 		{
 			name:   "env overrides global vault",
-			config: &Config{Version: 1, OnePass: &OnePassConfig{Vault: "Dev", Account: "my-account"}},
+			config: &Config{Version: 1, OnePass: &OnePassConfig{Vault: testVaultDev, Account: testAccount}},
 			env: envPtr(NewEnvironment(IncludeEntry{
-				Secret: "test", OnePass: &OnePassConfig{Vault: "Staging"},
+				Secret: testSecret, OnePass: &OnePassConfig{Vault: testVaultStaging},
 			})),
-			wantVault:   "Staging",
-			wantAccount: "my-account",
+			wantVault:   testVaultStaging,
+			wantAccount: testAccount,
 		},
 		{
 			name:        "neither set",
 			config:      &Config{Version: 1},
-			env:         envPtr(NewEnvironment(IncludeEntry{Secret: "test"})),
+			env:         envPtr(NewEnvironment(IncludeEntry{Secret: testSecret})),
 			wantVault:   "",
 			wantAccount: "",
 		},
 		{
 			name:        "nil env",
-			config:      &Config{Version: 1, OnePass: &OnePassConfig{Vault: "Dev", Account: "my-account"}},
+			config:      &Config{Version: 1, OnePass: &OnePassConfig{Vault: testVaultDev, Account: testAccount}},
 			env:         nil,
-			wantVault:   "Dev",
-			wantAccount: "my-account",
+			wantVault:   testVaultDev,
+			wantAccount: testAccount,
 		},
 	}
 
@@ -474,8 +498,8 @@ func TestEnvSourceList(t *testing.T) {
 		if len(devEnv.Sources) != 3 {
 			t.Fatalf("expected 3 dev sources, got %d", len(devEnv.Sources))
 		}
-		if devEnv.Sources[0].Secret != "myapp/dev" {
-			t.Errorf("expected first dev source secret = %q, got %q", "myapp/dev", devEnv.Sources[0].Secret)
+		if devEnv.Sources[0].Secret != testSecretMyappDev {
+			t.Errorf("expected first dev source secret = %q, got %q", testSecretMyappDev, devEnv.Sources[0].Secret)
 		}
 		if devEnv.Sources[1].Secret != "shared/datadog" {
 			t.Errorf("expected second dev source secret = %q, got %q", "shared/datadog", devEnv.Sources[1].Secret)
@@ -483,8 +507,8 @@ func TestEnvSourceList(t *testing.T) {
 		if devEnv.Sources[2].Secret != "shared/stripe" {
 			t.Errorf("expected third dev source secret = %q, got %q", "shared/stripe", devEnv.Sources[2].Secret)
 		}
-		if devEnv.Sources[2].Key != "api_key" {
-			t.Errorf("expected third dev source key = %q, got %q", "api_key", devEnv.Sources[2].Key)
+		if devEnv.Sources[2].Key != testKeyAPIKey {
+			t.Errorf("expected third dev source key = %q, got %q", testKeyAPIKey, devEnv.Sources[2].Key)
 		}
 		if devEnv.Sources[2].As != "STRIPE_KEY" {
 			t.Errorf("expected third dev source as = %q, got %q", "STRIPE_KEY", devEnv.Sources[2].As)
@@ -494,8 +518,8 @@ func TestEnvSourceList(t *testing.T) {
 		if len(stagingEnv.Sources) != 2 {
 			t.Fatalf("expected 2 staging sources, got %d", len(stagingEnv.Sources))
 		}
-		if stagingEnv.Sources[0].Secret != "myapp/staging" {
-			t.Errorf("expected staging source[0] secret = %q, got %q", "myapp/staging", stagingEnv.Sources[0].Secret)
+		if stagingEnv.Sources[0].Secret != testSecretMyappStaging {
+			t.Errorf("expected staging source[0] secret = %q, got %q", testSecretMyappStaging, stagingEnv.Sources[0].Secret)
 		}
 		if stagingEnv.Sources[1].Secret != "shared/monitoring" {
 			t.Errorf("expected staging source[1] secret = %q, got %q", "shared/monitoring", stagingEnv.Sources[1].Secret)
@@ -516,8 +540,8 @@ func TestEnvSourceList(t *testing.T) {
 		if devEnv.Sources[1].AWS == nil {
 			t.Fatal("expected AWS config on source entry, got nil")
 		}
-		if devEnv.Sources[1].AWS.Region != "eu-west-1" {
-			t.Errorf("expected AWS region = %q, got %q", "eu-west-1", devEnv.Sources[1].AWS.Region)
+		if devEnv.Sources[1].AWS.Region != testRegionEUWest {
+			t.Errorf("expected AWS region = %q, got %q", testRegionEUWest, devEnv.Sources[1].AWS.Region)
 		}
 		if devEnv.Sources[1].AWS.Profile != "datadog-profile" {
 			t.Errorf("expected AWS profile = %q, got %q", "datadog-profile", devEnv.Sources[1].AWS.Profile)
@@ -577,7 +601,7 @@ func TestSourceWithKeys(t *testing.T) {
 		if src.Secret != "dev/app/secrets" {
 			t.Errorf("expected secret = %q, got %q", "dev/app/secrets", src.Secret)
 		}
-		if src.AWS == nil || src.AWS.Region != "us-east-1" {
+		if src.AWS == nil || src.AWS.Region != testRegionUSEast {
 			t.Error("expected AWS config with region us-east-1")
 		}
 		if len(src.Keys) != 2 {
@@ -660,11 +684,11 @@ func TestMixedFormat(t *testing.T) {
 		if len(devEnv.Sources) != 2 {
 			t.Fatalf("expected 2 dev sources, got %d", len(devEnv.Sources))
 		}
-		if devEnv.Secret() != "myapp/dev" {
-			t.Errorf("dev secret = %q, want %q", devEnv.Secret(), "myapp/dev")
+		if devEnv.Secret() != testSecretMyappDev {
+			t.Errorf("dev secret = %q, want %q", devEnv.Secret(), testSecretMyappDev)
 		}
-		if devEnv.Sources[1].Key != "api_key" {
-			t.Errorf("dev source[1] key = %q, want %q", devEnv.Sources[1].Key, "api_key")
+		if devEnv.Sources[1].Key != testKeyAPIKey {
+			t.Errorf("dev source[1] key = %q, want %q", devEnv.Sources[1].Key, testKeyAPIKey)
 		}
 	})
 }
@@ -688,8 +712,8 @@ func TestBackendField(t *testing.T) {
 		}
 		// Non-first sources are NOT promoted at parse time; promotion
 		// happens at resolution time in clientForInclude/clientForValidate.
-		if src.Key != "api_key" {
-			t.Errorf("expected key = %q, got %q", "api_key", src.Key)
+		if src.Key != testKeyAPIKey {
+			t.Errorf("expected key = %q, got %q", testKeyAPIKey, src.Key)
 		}
 	})
 
@@ -749,7 +773,7 @@ func TestBackendField(t *testing.T) {
 func TestResolveBackend_WithBackendField(t *testing.T) {
 	t.Run("backend aws on first source resolves to AWS", func(t *testing.T) {
 		cfg := &Config{Version: 1}
-		env := envPtr(NewEnvironment(IncludeEntry{Secret: "test", Backend: BackendAWS}))
+		env := envPtr(NewEnvironment(IncludeEntry{Secret: testSecret, Backend: BackendAWS}))
 		got := cfg.ResolveBackend(env)
 		if got != BackendAWS {
 			t.Errorf("ResolveBackend() = %q, want %q", got, BackendAWS)
@@ -758,7 +782,7 @@ func TestResolveBackend_WithBackendField(t *testing.T) {
 
 	t.Run("backend 1pass on first source resolves to 1Pass", func(t *testing.T) {
 		cfg := &Config{Version: 1}
-		env := envPtr(NewEnvironment(IncludeEntry{Secret: "test", Backend: Backend1Pass}))
+		env := envPtr(NewEnvironment(IncludeEntry{Secret: testSecret, Backend: Backend1Pass}))
 		got := cfg.ResolveBackend(env)
 		if got != Backend1Pass {
 			t.Errorf("ResolveBackend() = %q, want %q", got, Backend1Pass)
@@ -806,7 +830,7 @@ func TestShouldIncludeAll(t *testing.T) {
 			config: &Config{Version: 1, IncludeAll: boolPtr(false)},
 			app:    &Application{IncludeAll: boolPtr(false)},
 			env: &Environment{
-				Sources:    []IncludeEntry{{Secret: "test"}},
+				Sources:    []IncludeEntry{{Secret: testSecret}},
 				IncludeAll: boolPtr(true),
 			},
 			wantResult: true,
@@ -816,7 +840,7 @@ func TestShouldIncludeAll(t *testing.T) {
 			config: &Config{Version: 1, IncludeAll: boolPtr(true)},
 			app:    &Application{IncludeAll: boolPtr(true)},
 			env: &Environment{
-				Sources:    []IncludeEntry{{Secret: "test"}},
+				Sources:    []IncludeEntry{{Secret: testSecret}},
 				IncludeAll: boolPtr(false),
 			},
 			wantResult: false,
@@ -825,7 +849,7 @@ func TestShouldIncludeAll(t *testing.T) {
 			name:   "env_overrides_global_no_app",
 			config: &Config{Version: 1, IncludeAll: boolPtr(false)},
 			env: &Environment{
-				Sources:    []IncludeEntry{{Secret: "test"}},
+				Sources:    []IncludeEntry{{Secret: testSecret}},
 				IncludeAll: boolPtr(true),
 			},
 			wantResult: true,
@@ -834,7 +858,7 @@ func TestShouldIncludeAll(t *testing.T) {
 			name:       "app_nil_inherits_global",
 			config:     &Config{Version: 1, IncludeAll: boolPtr(true)},
 			app:        nil,
-			env:        envPtr(NewEnvironment(IncludeEntry{Secret: "test"})),
+			env:        envPtr(NewEnvironment(IncludeEntry{Secret: testSecret})),
 			wantResult: true,
 		},
 		{
@@ -851,6 +875,123 @@ func TestShouldIncludeAll(t *testing.T) {
 			got := tt.config.ShouldIncludeAll(tt.app, tt.env)
 			if got != tt.wantResult {
 				t.Errorf("ShouldIncludeAll() = %v, want %v", got, tt.wantResult)
+			}
+		})
+	}
+}
+
+// --- Contract assertions ---
+// These verify the file-sink design contracts. Do NOT modify
+// without updating the approved plan.
+
+//nolint:staticcheck // QF1011: explicit types assert exact field types, not just presence
+func TestFileSinkContract(t *testing.T) {
+	var _ *FileSink = IncludeEntry{}.File
+	var _ string = Application{}.FilesDirAs
+	var _ string = Config{}.FilesDirAs
+
+	f := FileSink{}
+	var _ string = f.Name
+	var _ string = f.Path
+	var _ string = f.Mode
+	var _ string = f.PathAs
+	if f.Persistent() {
+		t.Fatal("empty sink must not be persistent")
+	}
+	mode, err := f.FileMode()
+	if err != nil || mode != 0o600 {
+		t.Fatalf("default mode: got %v, %v", mode, err)
+	}
+	f.Mode = "0644"
+	mode, err = f.FileMode()
+	if err != nil || mode != 0o644 {
+		t.Fatalf("0644 mode: got %v, %v", mode, err)
+	}
+	f.Mode = "abc"
+	if _, err := f.FileMode(); err == nil {
+		t.Fatal("non-octal mode must error")
+	}
+	f.Mode = "1777"
+	if _, err := f.FileMode(); err == nil {
+		t.Fatal("mode above 0777 must error")
+	}
+
+	cfg := &Config{FilesDirAs: "GLOBAL_DIR"}
+	if got := cfg.ResolveFilesDirAs(nil); got != "GLOBAL_DIR" {
+		t.Fatalf("global files_dir_as: got %q", got)
+	}
+	app := &Application{FilesDirAs: "APP_DIR"}
+	if got := cfg.ResolveFilesDirAs(app); got != "APP_DIR" {
+		t.Fatalf("app files_dir_as: got %q", got)
+	}
+}
+
+//nolint:revive // Table-driven file sink validation tests
+func TestFileSinkValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+		errMsg  string // "" means the fixture must load
+	}{
+		{"valid sinks", "file_sink_valid.yaml", ""},
+		{"both name and path", "file_sink_both_name_path.yaml", "exactly one of 'name' or 'path'"},
+		{"neither name nor path", "file_sink_neither.yaml", "exactly one of 'name' or 'path'"},
+		{"name with separator", "file_sink_name_with_slash.yaml", "must be a bare filename"},
+		{"bad mode", "file_sink_bad_mode.yaml", "invalid file mode"},
+		{"file with keys", "file_sink_with_keys.yaml", "cannot combine 'file' with 'keys'"},
+		{"file with as", "file_sink_with_as.yaml", "cannot combine 'file' with 'as'"},
+		{"duplicate path_as", "file_sink_dup_path_as.yaml", "duplicate path_as"},
+		{"missing path_as", "file_sink_missing_path_as.yaml", "missing required 'path_as'"},
+		{"bad files_dir_as", "file_sink_bad_files_dir_as.yaml", "not a valid environment variable name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := loadFixture(t, tt.fixture)
+			cfg, err := Load(path)
+			if tt.errMsg == "" {
+				if err != nil {
+					t.Fatalf("expected valid config, got: %v", err)
+				}
+				app := cfg.Applications["api"]
+				env := app.Environments["dev"]
+				if env.Sources[1].File == nil || env.Sources[1].File.Name != "sp.key" {
+					t.Fatalf("source[1] file sink not parsed: %+v", env.Sources[1].File)
+				}
+				if !env.Sources[3].File.Persistent() {
+					t.Fatal("source[3] should be persistent")
+				}
+				if got := cfg.ResolveFilesDirAs(app); got != "API_FILES_DIR" {
+					t.Fatalf("files_dir_as: got %q", got)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.errMsg)
+			}
+			if !strings.Contains(err.Error(), tt.errMsg) {
+				t.Fatalf("expected error containing %q, got %q", tt.errMsg, err.Error())
+			}
+		})
+	}
+}
+
+func TestLegacyMappingRejectsUnknownFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+		errMsg  string
+	}{
+		{"key on legacy mapping", "legacy_unknown_field.yaml", `unknown field "key"`},
+		{"file on legacy mapping", "legacy_file_sink.yaml", `unknown field "file"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(loadFixture(t, tt.fixture))
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.errMsg)
+			}
+			if !strings.Contains(err.Error(), tt.errMsg) {
+				t.Fatalf("expected error containing %q, got %q", tt.errMsg, err.Error())
 			}
 		})
 	}

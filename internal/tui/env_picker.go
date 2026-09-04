@@ -2,8 +2,6 @@
 package tui
 
 import (
-	"fmt"
-
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -40,7 +38,7 @@ func NewEnvPicker(appName string, envs []string, defaultEnv string) EnvPicker {
 	)
 
 	l := list.New(items, list.NewDefaultDelegate(), defaultWidth, defaultHeight)
-	l.Title = fmt.Sprintf("%s — Select environment:", appName)
+	l.Title = appName + " — Select environment:"
 	l.SetShowStatusBar(true)
 	l.SetFilteringEnabled(true)
 
@@ -86,8 +84,7 @@ func (m EnvPicker) Update(msg tea.Msg) (EnvPicker, tea.Cmd) {
 			return m, nil
 		}
 
-		switch msg.String() {
-		case "q":
+		if msg.String() == "q" {
 			m.quitting = true
 			return m, nil
 		}

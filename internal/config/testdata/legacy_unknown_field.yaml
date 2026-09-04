@@ -1,0 +1,5 @@
+version: 1
+environments:
+  dev:
+    secret: api/dev
+    key: DATABASE_URL

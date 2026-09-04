@@ -15,3 +15,4 @@ packages:
   github.com/sentiolabs/envctl/internal/secrets:
     config:
       all: true
+      exclude-interface-regex: "^RawReader$"

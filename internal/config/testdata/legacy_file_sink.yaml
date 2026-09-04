@@ -1,0 +1,7 @@
+version: 1
+environments:
+  dev:
+    secret: api/dev/sp_key
+    file:
+      name: sp.key
+      path_as: KEY_FILE

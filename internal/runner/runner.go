@@ -18,6 +18,12 @@ type Runner struct {
 	inheritPaths bool
 }
 
+// ExitError reports a child process that exited non-zero. Callers decide
+// when to exit so deferred cleanup can run first.
+type ExitError struct{ Code int }
+
+func (e *ExitError) Error() string { return fmt.Sprintf("command exited with code %d", e.Code) }
+
 // NewRunner creates a new runner.
 func NewRunner(env map[string]string) *Runner {
 	return &Runner{
@@ -33,7 +39,8 @@ func (r *Runner) WithInheritEnv(inherit bool) *Runner {
 	return r
 }
 
-// Run executes the command with the configured environment.
+// Run executes the command with the configured environment. A child that
+// exits non-zero yields *ExitError with its code; Run never calls os.Exit.
 func (r *Runner) Run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("no command specified")
@@ -76,10 +83,11 @@ func (r *Runner) Run(ctx context.Context, args []string) error {
 	signal.Stop(sigChan)
 	close(sigChan)
 
-	// If the command exited with a non-zero exit code, exit with that code
+	// Surface a non-zero exit as a typed error. The caller exits with this
+	// code after its deferred cleanup has run.
 	if err != nil {
 		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-			os.Exit(exitErr.ExitCode())
+			return &ExitError{Code: exitErr.ExitCode()}
 		}
 		return err
 	}

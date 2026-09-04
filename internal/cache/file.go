@@ -53,7 +53,7 @@ func NewFileBackend(dir string) (*FileBackend, error) {
 
 // Name returns the backend name.
 func (f *FileBackend) Name() string {
-	return "file"
+	return string(BackendFile)
 }
 
 // Get retrieves a cached entry.
@@ -169,7 +169,7 @@ func (f *FileBackend) Stats() (*Stats, error) {
 	entries, err := os.ReadDir(f.dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Stats{Backend: "file"}, nil
+			return &Stats{Backend: string(BackendFile)}, nil
 		}
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func (f *FileBackend) Stats() (*Stats, error) {
 	}
 
 	return &Stats{
-		Backend:    "file",
+		Backend:    string(BackendFile),
 		EntryCount: count,
 		HitCount:   f.hitCount,
 		MissCount:  f.missCount,

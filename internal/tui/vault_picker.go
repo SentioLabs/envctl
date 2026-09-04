@@ -59,8 +59,7 @@ func (v VaultPicker) Update(msg tea.Msg) (VaultPicker, tea.Cmd) {
 			break
 		}
 
-		switch msg.Type {
-		case tea.KeyEnter:
+		if msg.Type == tea.KeyEnter {
 			if item, ok := v.list.SelectedItem().(vaultItem); ok {
 				vault := item.vault
 				v.selected = &vault
@@ -68,8 +67,7 @@ func (v VaultPicker) Update(msg tea.Msg) (VaultPicker, tea.Cmd) {
 			return v, nil
 		}
 
-		switch msg.String() {
-		case "q":
+		if msg.String() == "q" {
 			v.quitting = true
 			return v, nil
 		}

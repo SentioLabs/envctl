@@ -1,6 +1,7 @@
 package secrets_test
 
 import (
+	"os/exec"
 	"testing"
 
 	"github.com/sentiolabs/envctl/internal/config"
@@ -10,12 +11,13 @@ import (
 const (
 	backendAWS       = "aws"
 	backend1Password = "1password"
+	testSecretRef    = "test/secret"
 )
 
 func TestOptionsStruct(t *testing.T) {
 	t.Run("has Env field and no Region/Profile fields", func(t *testing.T) {
 		e := config.NewEnvironment(config.IncludeEntry{
-			Secret: "test/secret",
+			Secret: testSecretRef,
 			AWS: &config.AWSConfig{
 				Region:  "us-east-1",
 				Profile: "myprofile",
@@ -79,7 +81,7 @@ func TestNewClientDefaultsToAWS(t *testing.T) {
 
 	t.Run("when env has aws config", func(t *testing.T) {
 		e := config.NewEnvironment(config.IncludeEntry{
-			Secret: "test/secret",
+			Secret: testSecretRef,
 			AWS:    &config.AWSConfig{Region: "eu-west-1"},
 		})
 		env := &e
@@ -102,9 +104,13 @@ func TestNewClientDefaultsToAWS(t *testing.T) {
 }
 
 func TestNewClientRoutesTo1Password(t *testing.T) {
+	if _, err := exec.LookPath("op"); err != nil {
+		t.Skip("1Password CLI (op) not installed")
+	}
+
 	t.Run("when env has 1pass config", func(t *testing.T) {
 		e := config.NewEnvironment(config.IncludeEntry{
-			Secret: "test/secret",
+			Secret: testSecretRef,
 			OnePass: &config.OnePassConfig{
 				Vault:   "TestVault",
 				Account: "test.1password.com",
@@ -151,7 +157,7 @@ func TestNewClientRoutesTo1Password(t *testing.T) {
 
 	t.Run("env-level 1pass overrides global AWS", func(t *testing.T) {
 		e := config.NewEnvironment(config.IncludeEntry{
-			Secret:  "test/secret",
+			Secret:  testSecretRef,
 			OnePass: &config.OnePassConfig{Vault: "EnvVault"},
 		})
 		env := &e

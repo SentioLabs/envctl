@@ -2,8 +2,6 @@
 package tui
 
 import (
-	"fmt"
-
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -39,7 +37,7 @@ func NewSecretList(appEnv string, sources []Source) SecretList {
 	)
 
 	l := list.New(items, list.NewDefaultDelegate(), defaultWidth, defaultHeight)
-	l.Title = fmt.Sprintf("Secrets: %s", appEnv)
+	l.Title = "Secrets: " + appEnv
 	l.SetShowStatusBar(true)
 	l.SetFilteringEnabled(true)
 

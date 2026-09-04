@@ -1,0 +1,19 @@
+version: 1
+files_dir_as: ENVCTL_FILES_DIR
+applications:
+  api:
+    files_dir_as: API_FILES_DIR
+    dev:
+      - secret: api/dev
+      - secret: api/dev/sp_key
+        backend: aws
+        file:
+          name: sp.key
+          path_as: APP_SAML_KEY_FILE
+      - secret: api/dev/sp_cert
+        file: { name: sp.crt, mode: "0644", path_as: APP_SAML_CERT_FILE }
+      - secret: api/dev/kubeconfig
+        key: config
+        file:
+          path: ~/.config/api/kubeconfig
+          path_as: KUBECONFIG

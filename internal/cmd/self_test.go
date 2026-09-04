@@ -13,6 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testVersionTag is the tagged version string used by the version fixtures.
+const testVersionTag = "v0.1.0"
+
 func TestEnsureVPrefix(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -26,18 +29,18 @@ func TestEnsureVPrefix(t *testing.T) {
 		},
 		{
 			name:     "dev becomes dev version",
-			input:    "dev",
+			input:    testDevEnv,
 			expected: "v0.0.0-dev",
 		},
 		{
 			name:     "version without v prefix gets v added",
 			input:    "0.1.0",
-			expected: "v0.1.0",
+			expected: testVersionTag,
 		},
 		{
 			name:     "version with v prefix unchanged",
-			input:    "v0.1.0",
-			expected: "v0.1.0",
+			input:    testVersionTag,
+			expected: testVersionTag,
 		},
 	}
 

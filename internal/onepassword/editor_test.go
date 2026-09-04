@@ -12,6 +12,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Fixture values shared by the 1Password tests.
+const (
+	testVault           = "MyVault"
+	testVaultName       = "TestVault"
+	testAccount         = "test-account"
+	testItemID          = "abc123"
+	testItem            = "MyItem"
+	testItemLower       = "myitem"
+	testTitle           = "Test"
+	testRefVaultItem    = "MyVault/MyItem"
+	testRefFull         = "op://MyVault/MyItem/password"
+	testFieldPassword   = "password"
+	testSectionLogin    = "login"
+	caseItemOnly        = "item only"
+	caseVaultItem       = "vault/item"
+	msgInvalidRefFormat = "invalid reference format"
+	typeString          = "STRING"
+	typeConcealed       = "CONCEALED"
+	typeNotes           = "NOTES"
+	labelNotes          = "notes"
+	valueNotes          = "some notes"
+	testItemID1         = "item1"
+)
+
 // mockRunner captures the args passed to runCmd and returns canned output.
 type mockRunner struct {
 	calls  [][]string
@@ -27,8 +51,8 @@ func (m *mockRunner) run(_ context.Context, args ...string) ([]byte, error) {
 // newTestEditor creates an OPEditor with a mock command runner.
 func newTestEditor(m *mockRunner) *OPEditor {
 	client := &Client{
-		defaultVault: "TestVault",
-		account:      "test-account",
+		defaultVault: testVaultName,
+		account:      testAccount,
 	}
 	editor := &OPEditor{
 		Client: client,
@@ -39,7 +63,7 @@ func newTestEditor(m *mockRunner) *OPEditor {
 
 func TestListVaults(t *testing.T) {
 	vaults := []VaultRef{
-		{ID: "abc123", Name: "Personal"},
+		{ID: testItemID, Name: "Personal"},
 		{ID: "def456", Name: "Shared"},
 	}
 	data, err := json.Marshal(vaults)
@@ -52,14 +76,14 @@ func TestListVaults(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Len(t, result, 2)
-	assert.Equal(t, "abc123", result[0].ID)
+	assert.Equal(t, testItemID, result[0].ID)
 	assert.Equal(t, "Personal", result[0].Name)
 	assert.Equal(t, "def456", result[1].ID)
 	assert.Equal(t, "Shared", result[1].Name)
 
 	// Verify correct op command was issued
 	require.Len(t, m.calls, 1)
-	assert.Equal(t, []string{"vault", "list", "--format", "json", "--account", "test-account"}, m.calls[0])
+	assert.Equal(t, []string{"vault", "list", flagFormat, formatJSON, flagAccount, testAccount}, m.calls[0])
 }
 
 func TestListItems(t *testing.T) {
@@ -69,8 +93,8 @@ func TestListItems(t *testing.T) {
 		Vault VaultRef `json:"vault"`
 	}
 	items := []opItem{
-		{ID: "item1", Title: "DB Creds", Vault: VaultRef{ID: "v1", Name: "MyVault"}},
-		{ID: "item2", Title: "API Keys", Vault: VaultRef{ID: "v1", Name: "MyVault"}},
+		{ID: testItemID1, Title: "DB Creds", Vault: VaultRef{ID: "v1", Name: testVault}},
+		{ID: "item2", Title: "API Keys", Vault: VaultRef{ID: "v1", Name: testVault}},
 	}
 	data, err := json.Marshal(items)
 	require.NoError(t, err)
@@ -78,31 +102,31 @@ func TestListItems(t *testing.T) {
 	m := &mockRunner{output: data}
 	editor := newTestEditor(m)
 
-	result, err := editor.ListEditorItems(context.Background(), "MyVault")
+	result, err := editor.ListEditorItems(context.Background(), testVault)
 	require.NoError(t, err)
 
 	assert.Len(t, result, 2)
-	assert.Equal(t, "item1", result[0].ID)
+	assert.Equal(t, testItemID1, result[0].ID)
 	assert.Equal(t, "DB Creds", result[0].Name)
-	assert.Equal(t, "MyVault", result[0].Vault)
+	assert.Equal(t, testVault, result[0].Vault)
 	assert.Equal(t, "item2", result[1].ID)
 	assert.Equal(t, "API Keys", result[1].Name)
 
 	require.Len(t, m.calls, 1)
 	expectedArgs := []string{
-		"item", "list", "--vault", "MyVault",
-		"--format", "json", "--account", "test-account",
+		cmdItem, "list", flagVault, testVault,
+		flagFormat, formatJSON, flagAccount, testAccount,
 	}
 	assert.Equal(t, expectedArgs, m.calls[0])
 }
 
 func TestGetFields(t *testing.T) {
 	item := Item{
-		ID:    "item1",
+		ID:    testItemID1,
 		Title: "Test Item",
 		Fields: []Field{
-			{ID: "f1", Label: "username", Value: "admin", Type: "STRING"},
-			{ID: "f2", Label: "password", Value: "secret", Type: "CONCEALED"},
+			{ID: "f1", Label: "username", Value: "admin", Type: typeString},
+			{ID: "f2", Label: testFieldPassword, Value: "secret", Type: typeConcealed},
 			{ID: "f3", Label: "url", Value: "https://example.com", Type: "URL"},
 		},
 	}
@@ -123,7 +147,7 @@ func TestGetFields(t *testing.T) {
 	assert.Equal(t, FieldText, result[0].Type)
 
 	assert.Equal(t, "f2", result[1].ID)
-	assert.Equal(t, "password", result[1].Key)
+	assert.Equal(t, testFieldPassword, result[1].Key)
 	assert.Equal(t, "secret", result[1].Value)
 	assert.Equal(t, FieldConcealed, result[1].Type)
 
@@ -133,11 +157,11 @@ func TestGetFields(t *testing.T) {
 
 func TestGetFields_WithSection(t *testing.T) {
 	item := Item{
-		ID:    "item1",
+		ID:    testItemID1,
 		Title: "Test Item",
 		Fields: []Field{
 			{
-				ID: "f1", Label: "db_host", Value: "localhost", Type: "STRING",
+				ID: "f1", Label: "db_host", Value: "localhost", Type: typeString,
 				Section: &struct {
 					ID    string `json:"id"`
 					Label string `json:"label,omitempty"`
@@ -167,10 +191,10 @@ func TestUpdateField(t *testing.T) {
 
 	require.Len(t, m.calls, 1)
 	assert.Equal(t, []string{
-		"item", "edit", "myitem",
+		cmdItem, "edit", testItemLower,
 		"DB_HOST=localhost",
-		"--vault", "TestVault",
-		"--account", "test-account",
+		flagVault, testVaultName,
+		flagAccount, testAccount,
 	}, m.calls[0])
 }
 
@@ -183,19 +207,19 @@ func TestDeleteField(t *testing.T) {
 
 	require.Len(t, m.calls, 1)
 	assert.Equal(t, []string{
-		"item", "edit", "myitem",
+		cmdItem, "edit", testItemLower,
 		"OLD_KEY[delete]",
-		"--vault", "TestVault",
-		"--account", "test-account",
+		flagVault, testVaultName,
+		flagAccount, testAccount,
 	}, m.calls[0])
 }
 
 func TestRenameField(t *testing.T) {
 	item := Item{
-		ID:    "myitem",
-		Title: "Test",
+		ID:    testItemLower,
+		Title: testTitle,
 		Fields: []Field{
-			{ID: "f1", Label: "old_key", Value: "the-value", Type: "STRING"},
+			{ID: "f1", Label: "old_key", Value: "the-value", Type: typeString},
 		},
 	}
 	itemData, err := json.Marshal(item)
@@ -220,10 +244,10 @@ func TestRenameField(t *testing.T) {
 
 func TestRenameField_KeyNotFound(t *testing.T) {
 	item := Item{
-		ID:    "myitem",
-		Title: "Test",
+		ID:    testItemLower,
+		Title: testTitle,
 		Fields: []Field{
-			{ID: "f1", Label: "other_key", Value: "val", Type: "STRING"},
+			{ID: "f1", Label: "other_key", Value: "val", Type: typeString},
 		},
 	}
 	itemData, err := json.Marshal(item)
@@ -245,31 +269,31 @@ func TestCreateItem(t *testing.T) {
 		{Key: "DB_HOST", Value: "localhost"},
 		{Key: "DB_PASS", Value: "secret"},
 	}
-	err := editor.CreateEditorItem(context.Background(), "MyVault", "new-item", fields)
+	err := editor.CreateEditorItem(context.Background(), testVault, "new-item", fields)
 	require.NoError(t, err)
 
 	require.Len(t, m.calls, 1)
 	args := m.calls[0]
-	assert.Equal(t, "item", args[0])
+	assert.Equal(t, cmdItem, args[0])
 	assert.Equal(t, "create", args[1])
-	assert.Contains(t, args, "--vault")
-	assert.Contains(t, args, "MyVault")
+	assert.Contains(t, args, flagVault)
+	assert.Contains(t, args, testVault)
 	assert.Contains(t, args, "--title")
 	assert.Contains(t, args, "new-item")
 	assert.Contains(t, args, "--category")
 	assert.Contains(t, args, "SecureNote")
 	assert.Contains(t, args, "DB_HOST=localhost")
 	assert.Contains(t, args, "DB_PASS=secret")
-	assert.Contains(t, args, "--account")
-	assert.Contains(t, args, "test-account")
+	assert.Contains(t, args, flagAccount)
+	assert.Contains(t, args, testAccount)
 }
 
 func TestSetFieldType_Concealed(t *testing.T) {
 	item := Item{
-		ID:    "myitem",
-		Title: "Test",
+		ID:    testItemLower,
+		Title: testTitle,
 		Fields: []Field{
-			{ID: "f1", Label: "API_KEY", Value: "abc123", Type: "STRING"},
+			{ID: "f1", Label: "API_KEY", Value: testItemID, Type: typeString},
 		},
 	}
 	itemData, err := json.Marshal(item)
@@ -292,18 +316,18 @@ func TestSetFieldType_Concealed(t *testing.T) {
 
 	require.Len(t, capturedCalls, 2)
 	editArgs := capturedCalls[1]
-	assert.Equal(t, "item", editArgs[0])
+	assert.Equal(t, cmdItem, editArgs[0])
 	assert.Equal(t, "edit", editArgs[1])
-	assert.Equal(t, "myitem", editArgs[2])
+	assert.Equal(t, testItemLower, editArgs[2])
 	assert.Equal(t, "API_KEY[password]=abc123", editArgs[3])
 }
 
 func TestSetFieldType_Text(t *testing.T) {
 	item := Item{
-		ID:    "myitem",
-		Title: "Test",
+		ID:    testItemLower,
+		Title: testTitle,
 		Fields: []Field{
-			{ID: "f1", Label: "API_KEY", Value: "abc123", Type: "CONCEALED"},
+			{ID: "f1", Label: "API_KEY", Value: testItemID, Type: typeConcealed},
 		},
 	}
 	itemData, err := json.Marshal(item)
@@ -331,10 +355,10 @@ func TestSetFieldType_Text(t *testing.T) {
 
 func TestSetFieldType_KeyNotFound(t *testing.T) {
 	item := Item{
-		ID:    "myitem",
-		Title: "Test",
+		ID:    testItemLower,
+		Title: testTitle,
 		Fields: []Field{
-			{ID: "f1", Label: "OTHER", Value: "val", Type: "STRING"},
+			{ID: "f1", Label: "OTHER", Value: "val", Type: typeString},
 		},
 	}
 	itemData, err := json.Marshal(item)
@@ -369,12 +393,12 @@ func TestUpdateField_RefParsing(t *testing.T) {
 	m := &mockRunner{output: []byte("{}")}
 	editor := newTestEditor(m)
 
-	err := editor.UpdateField(context.Background(), "myitem", "KEY", "val", "")
+	err := editor.UpdateField(context.Background(), testItemLower, "KEY", "val", "")
 	require.NoError(t, err)
 
 	require.Len(t, m.calls, 1)
 	args := m.calls[0]
 	// Should use default vault
-	assert.Contains(t, strings.Join(args, " "), "--vault")
-	assert.Contains(t, strings.Join(args, " "), "TestVault")
+	assert.Contains(t, strings.Join(args, " "), flagVault)
+	assert.Contains(t, strings.Join(args, " "), testVaultName)
 }

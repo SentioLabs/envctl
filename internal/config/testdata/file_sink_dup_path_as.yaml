@@ -1,0 +1,8 @@
+version: 1
+environments:
+  dev:
+    - secret: api/dev
+    - secret: api/dev/a
+      file: { name: a.pem, path_as: PEM_FILE }
+    - secret: api/dev/b
+      file: { name: b.pem, path_as: PEM_FILE }

@@ -15,7 +15,7 @@ type Item struct {
 
 // Field represents a single key-value field within a secret item.
 type Field struct {
-	ID      string    // backend-specific field ID
+	ID      string // backend-specific field ID
 	Key     string
 	Value   string
 	Type    FieldType

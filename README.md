@@ -26,6 +26,7 @@ A lightweight CLI tool that enables developers to use a secrets manager as the s
   - [Configuration Precedence](#configuration-precedence)
   - [AWS Secret Format](#aws-secret-format)
   - [Secret Reference Syntax](#secret-reference-syntax)
+  - [File Sinks](#file-sinks)
   - [Cache Configuration](#cache-configuration)
 - [Caching](#caching)
   - [How It Works](#how-it-works)
@@ -250,6 +251,39 @@ envctl run -- docker compose up
 ```
 
 Docker inherits the variables from envctl's environment - secrets never touch disk.
+
+#### Bind-mounting file sinks
+
+Export the run directory with `files_dir_as` and mount it read-only:
+
+```yaml
+# docker-compose.yml
+services:
+  api:
+    volumes:
+      - ${ASGARD_SAML_DIR:-./certs}:/secrets/saml:ro
+    environment:
+      APP_SAML_KEY_FILE: /secrets/saml/sp.key
+```
+
+```bash
+envctl run -a asgard-api -e local-saml -- docker compose up -d --wait
+```
+
+Two things to know about detached compose:
+
+1. `docker compose up -d` returns before the container has booted. envctl
+   removes the run directory the moment compose exits, so a container that
+   reads its files at startup can find an empty mount. Pass `--wait` (or gate
+   the dependency on a healthcheck) so the reads finish before envctl
+   returns.
+2. The containers outlive `envctl run`. When one restarts later (a laptop
+   reboot with `restart: unless-stopped`, for instance) the directory is
+   gone. Apps that read their files once at boot keep working until then.
+   The fix is to re-run the envctl command.
+
+On macOS `$TMPDIR` resolves under `/private/var/folders`, which Docker
+Desktop shares by default, so the bind mount works without extra sharing.
 
 **Alternative: Generate .env file**
 
@@ -527,6 +561,72 @@ Examples:
 - `myapp/dev#DATABASE_URL` - key `DATABASE_URL` from secret `myapp/dev`
 - `shared/datadog#api_key` - key `api_key` from secret `shared/datadog`
 
+### File Sinks
+
+Some secrets are consumed as files, not environment variables: SAML keypairs
+and IdP metadata, TLS certificates, kubeconfigs, service-account JSON. A
+source with a `file:` block is written to disk and only its **path** is
+exported.
+
+```yaml
+version: 1
+
+applications:
+  asgard-api:
+    files_dir_as: ASGARD_SAML_DIR         # optional: exports the run directory
+    local-saml:
+      - secret: BACstack Local - Asgard API
+      - secret: dev/bacstack/asgard-api/saml_sp_key
+        backend: aws
+        file:
+          name: sp.key                     # written under the run directory
+          mode: "0600"                     # default
+          path_as: APP_SAML_KEY_FILE       # exports the path, never the content
+      - secret: dev/bacstack/asgard-api/saml_sp_cert
+        backend: aws
+        file: { name: sp.crt, mode: "0644", path_as: APP_SAML_CERT_FILE }
+      - secret: dev/bacstack/asgard-api/saml_idp_metadata
+        backend: aws
+        file: { name: google-idp-metadata.xml, path_as: APP_SAML_IDP_METADATA_FILE }
+```
+
+| Field | Meaning |
+|---|---|
+| `file.name` | Bare filename. The sink is **ephemeral**: `envctl run` writes it into a fresh directory under `$TMPDIR` (mode 0700) and removes the directory when the command exits. |
+| `file.path` | Explicit path (`~` and `${VAR}` expand, relative paths resolve against the config file). The sink is **persistent** and survives the run. `envctl clean` removes it. |
+| `file.mode` | Octal string, default `"0600"`. |
+| `file.path_as` | Required. The environment variable that receives the absolute path. |
+| `files_dir_as` | Application or global. Exports the ephemeral run directory so a whole set can be bind-mounted. |
+
+Exactly one of `name` or `path` is set. A `file:` block can't be combined
+with `keys:` or `as:`, because both would put content in the environment.
+
+**What gets written.** With `key:`, the sink holds that one field. Without
+`key:`, the sink holds the AWS secret byte-for-byte: plain text keeps its
+trailing newline, a JSON secret stays JSON (a whole kubeconfig or
+service-account file). 1Password sources need `key:` because the CLI returns
+fields, not raw items.
+
+**Persistent paths inside a repo.** envctl refuses to write a `file.path`
+that sits inside a git worktree unless git reports it as ignored. Coding
+agents, indexers, `find`, zip and screen shares all ignore `.gitignore`, so
+prefer a location outside the repo such as `~/.config/<app>/`.
+
+**Which commands write sinks.**
+
+| Command | Ephemeral (`name`) | Persistent (`path`) |
+|---|---|---|
+| `run` | Written, exported, removed on exit | Written, left in place |
+| `env`, `export`, `get` | Skipped with a stderr warning | Written, path variable included |
+| `list` | Shown as `KEY_FILE (from: file:<secret>)` | Same |
+| `validate` | Fetched, size and mode reported | Same, plus the check-ignore rule |
+| `clean` | n/a | Removed (`--all` sweeps every app and env) |
+
+**Linux containers.** The run directory is always 0700. A container whose
+uid differs from your host user can't traverse it. Run the container as your
+uid, or use a persistent `path` you control. `TMPDIR=/dev/shm envctl run ...`
+keeps ephemeral sinks off disk entirely on Linux.
+
 ### Cache Configuration
 
 Configure caching behavior in your `.envctl.yaml`:
@@ -571,7 +671,7 @@ Cached secrets are stored securely:
 
 - **Keyring backend**: Uses OS-level credential storage (macOS Keychain, Linux secret-service)
 - **File backend**: AES-256-GCM encryption with machine-derived keys
-- **No plaintext**: Secrets are never stored in plaintext on disk
+- **No plaintext**: Cached secrets are never stored in plaintext on disk. The one deliberate exception is a [file sink](#file-sinks): the file itself is plaintext, written 0600 inside a 0700 directory under `$TMPDIR` and removed when `envctl run` exits, unless you opt into a persistent `path`
 - **Auto-disabled**: Caching is automatically disabled when running as root
 
 ### Cache Control
@@ -812,7 +912,7 @@ No tokens or credentials to manage - just unlock 1Password once per session.
 
 #### `envctl run`
 
-Run a command with secrets injected.
+Run a command with secrets injected. Sources with a `file:` block are written to a per-run directory and their paths exported through `path_as`. See [File Sinks](#file-sinks).
 
 ```bash
 envctl run [flags] -- command [args...]
@@ -945,6 +1045,17 @@ envctl cache status
 envctl cache clear
 ```
 
+#### `envctl clean`
+
+Remove persistent file sinks (`file.path`) for the selected application and
+environment. Ephemeral sinks never need cleaning.
+
+```bash
+envctl clean
+envctl clean -e staging
+envctl clean --all      # every application and environment in the config
+```
+
 #### `envctl self update`
 
 Update envctl to the latest version.
@@ -1013,8 +1124,9 @@ envctl is for **local development only**. In CI/CD and production:
 ## Security
 
 - **Never logs secret values** - Only key names appear in verbose output
+- **File sinks are ephemeral and 0600 by default** - Written to a per-run 0700 directory outside any repo, replaced atomically, removed on exit. Their content never reaches stdout. Only paths do
 - **No shell expansion** - Commands are executed directly, preventing injection attacks
-- **Memory safety** - Secrets are cleared from memory after use
+- **Memory hygiene** - Secret buffers are cleared after use on a best-effort basis. Go strings returned by backend SDKs may be copied by the runtime
 - **File permission warnings** - Alerts if `.env` files have insecure permissions
 - **Gitignore checks** - Warns if `.env` is not in `.gitignore`
 - **Encrypted cache** - Cached secrets use AES-256-GCM encryption or OS keyring

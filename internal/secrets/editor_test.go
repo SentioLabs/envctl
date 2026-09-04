@@ -17,6 +17,7 @@ func (m *mockEditor) GetSecret(_ context.Context, _ string) (map[string]string, 
 func (m *mockEditor) GetSecretKey(_ context.Context, _, _ string) (string, error) { return "", nil }
 func (m *mockEditor) Name() string                                                { return "mock" }
 func (m *mockEditor) ListVaults(_ context.Context) ([]secrets.Vault, error)       { return nil, nil }
+
 func (m *mockEditor) ListItems(_ context.Context, _ string) ([]secrets.Item, error) {
 	return nil, nil
 }
@@ -29,6 +30,7 @@ func (m *mockEditor) DeleteField(_ context.Context, _ string, _ secrets.Field) e
 func (m *mockEditor) RenameField(_ context.Context, _ string, _ secrets.Field, _ string) error {
 	return nil
 }
+
 func (m *mockEditor) CreateItem(_ context.Context, _ string, _ string, _ []secrets.Field) error {
 	return nil
 }

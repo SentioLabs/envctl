@@ -4,7 +4,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/sentiolabs/envctl/internal/env"
 	"github.com/sentiolabs/envctl/internal/runner"
@@ -26,6 +29,10 @@ into its environment. This is the primary workflow for local development.
 Secrets are fetched from your backend, merged with the current environment
 (secrets take precedence), and the command is executed with the merged environment.
 
+Sources with a file: block are written to a per-run directory (mode 0700,
+files 0600 by default) and their paths exported through path_as. The
+directory is removed when the command exits.
+
 Example:
   envctl run -- go run ./cmd/server
   envctl run -- npm start
@@ -44,19 +51,36 @@ func init() {
 }
 
 // runRun executes a command with secrets injected into its environment.
+// File sinks are written before the child starts and the ephemeral run
+// directory is removed when runRun returns, on success, failure, or a
+// forwarded signal. A non-zero child exit surfaces as *runner.ExitError,
+// which Execute turns into the process exit code after this cleanup. A
+// signal trap covers secret fetch and file materialization too, so a
+// Ctrl-C before the child starts still runs the deferred cleanup.
 func runRun(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
+	// Trap termination signals for the whole command so a Ctrl-C during
+	// secret fetch or file materialization returns through the normal error
+	// path and deferred cleanup runs. The runner forwards signals to the
+	// child once it starts; it receives its own uncancelled context so a
+	// forwarded signal never becomes a SIGKILL via exec.CommandContext.
+	sigCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+
 	overrides := parseOverrides(setFlags)
 
-	entries, _, err := loadAndBuild(ctx, cmd, overrides)
+	out, err := loadAndBuildFiles(sigCtx, cmd, overrides, sinkModeRun)
 	if err != nil {
 		return err
 	}
+	defer out.files.Close()
 
-	// Run the command
-	envMap := env.ToMap(entries)
-	r := runner.NewRunner(envMap)
+	if err := sigCtx.Err(); err != nil {
+		return fmt.Errorf("interrupted before command start: %w", err)
+	}
+
+	r := runner.NewRunner(env.ToMap(out.entries))
 	return r.Run(ctx, args)
 }
 

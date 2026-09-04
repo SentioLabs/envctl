@@ -1,3 +1,4 @@
+//nolint:testpackage // Testing internal functions requires same package
 package tui
 
 import (
@@ -21,26 +22,26 @@ func TestNewConfigContext_EmptyConfig(t *testing.T) {
 
 func TestNewConfigContext_MultiApp(t *testing.T) {
 	cfg := &config.Config{
-		DefaultApplication: "api",
-		DefaultEnvironment: "dev",
+		DefaultApplication: testAppAPI,
+		DefaultEnvironment: testEnvDev,
 		DefaultBackend:     config.BackendAWS,
-		AWS:                &config.AWSConfig{Region: "us-east-1"},
+		AWS:                &config.AWSConfig{Region: testRegion},
 		OnePass:            &config.OnePassConfig{Vault: "Dev"},
 		Applications: map[string]*config.Application{
-			"api": {
+			testAppAPI: {
 				Environments: map[string]config.Environment{
-					"dev": config.NewEnvironment(
+					testEnvDev: config.NewEnvironment(
 						config.IncludeEntry{Secret: "api/dev/secrets", Backend: config.BackendAWS},
 						config.IncludeEntry{Secret: "api/dev/extra", Backend: config.Backend1Pass},
 					),
-					"prod": config.NewEnvironment(
+					testEnvProd: config.NewEnvironment(
 						config.IncludeEntry{Secret: "api/prod/secrets"},
 					),
 				},
 			},
 			"web": {
 				Environments: map[string]config.Environment{
-					"dev": config.NewEnvironment(
+					testEnvDev: config.NewEnvironment(
 						config.IncludeEntry{Secret: "web/dev/secrets", Backend: config.Backend1Pass},
 					),
 				},
@@ -52,11 +53,11 @@ func TestNewConfigContext_MultiApp(t *testing.T) {
 	require.NotNil(t, ctx)
 
 	// Apps should be sorted
-	assert.Equal(t, []string{"api", "web"}, ctx.Apps)
+	assert.Equal(t, []string{testAppAPI, "web"}, ctx.Apps)
 
 	// Envs should be sorted per app
-	assert.Equal(t, []string{"dev", "prod"}, ctx.Envs["api"])
-	assert.Equal(t, []string{"dev"}, ctx.Envs["web"])
+	assert.Equal(t, []string{testEnvDev, testEnvProd}, ctx.Envs[testAppAPI])
+	assert.Equal(t, []string{testEnvDev}, ctx.Envs["web"])
 
 	// Sources for api/dev: two sources with explicit backends
 	apiDevSources := ctx.Sources["api/dev"]
@@ -75,20 +76,20 @@ func TestNewConfigContext_MultiApp(t *testing.T) {
 	assert.Equal(t, Source{Name: "web/dev/secrets", Backend: config.Backend1Pass}, webDevSources[0])
 
 	// Defaults
-	assert.Equal(t, "api", ctx.DefaultApp)
-	assert.Equal(t, "dev", ctx.DefaultEnv)
+	assert.Equal(t, testAppAPI, ctx.DefaultApp)
+	assert.Equal(t, testEnvDev, ctx.DefaultEnv)
 }
 
 func TestNewConfigContext_BackendResolution(t *testing.T) {
 	// Source with explicit backend field takes precedence
 	cfg := &config.Config{
 		DefaultBackend: config.BackendAWS,
-		AWS:            &config.AWSConfig{Region: "us-east-1"},
+		AWS:            &config.AWSConfig{Region: testRegion},
 		OnePass:        &config.OnePassConfig{Vault: "Dev"},
 		Applications: map[string]*config.Application{
 			"svc": {
 				Environments: map[string]config.Environment{
-					"local": config.NewEnvironment(
+					testEnvLocal: config.NewEnvironment(
 						config.IncludeEntry{Secret: "svc/local", Backend: config.Backend1Pass},
 					),
 				},
@@ -109,7 +110,7 @@ func TestNewConfigContext_SingleApp(t *testing.T) {
 		Applications: map[string]*config.Application{
 			"myapp": {
 				Environments: map[string]config.Environment{
-					"staging": config.NewEnvironment(
+					testEnvStaging: config.NewEnvironment(
 						config.IncludeEntry{Secret: "myapp/staging", AWS: &config.AWSConfig{Region: "eu-west-1"}},
 					),
 				},
@@ -121,7 +122,7 @@ func TestNewConfigContext_SingleApp(t *testing.T) {
 	require.NotNil(t, ctx)
 
 	assert.Equal(t, []string{"myapp"}, ctx.Apps)
-	assert.Equal(t, []string{"staging"}, ctx.Envs["myapp"])
+	assert.Equal(t, []string{testEnvStaging}, ctx.Envs["myapp"])
 
 	sources := ctx.Sources["myapp/staging"]
 	require.Len(t, sources, 1)
@@ -131,13 +132,13 @@ func TestNewConfigContext_SingleApp(t *testing.T) {
 
 func TestNewConfigContext_LegacyMode(t *testing.T) {
 	cfg := &config.Config{
-		DefaultEnvironment: "dev",
-		AWS:                &config.AWSConfig{Region: "us-east-1"},
+		DefaultEnvironment: testEnvDev,
+		AWS:                &config.AWSConfig{Region: testRegion},
 		Environments: map[string]config.Environment{
-			"dev": config.NewEnvironment(
+			testEnvDev: config.NewEnvironment(
 				config.IncludeEntry{Secret: "myapp/dev"},
 			),
-			"prod": config.NewEnvironment(
+			testEnvProd: config.NewEnvironment(
 				config.IncludeEntry{Secret: "myapp/prod"},
 			),
 		},
@@ -150,7 +151,7 @@ func TestNewConfigContext_LegacyMode(t *testing.T) {
 	assert.Equal(t, []string{""}, ctx.Apps)
 
 	// Envs sorted under empty app key
-	assert.Equal(t, []string{"dev", "prod"}, ctx.Envs[""])
+	assert.Equal(t, []string{testEnvDev, testEnvProd}, ctx.Envs[""])
 
 	// Sources keyed as "/env" (empty app + "/" + env)
 	devSources := ctx.Sources["/dev"]
@@ -163,6 +164,6 @@ func TestNewConfigContext_LegacyMode(t *testing.T) {
 	assert.Equal(t, "myapp/prod", prodSources[0].Name)
 
 	// Defaults
-	assert.Equal(t, "", ctx.DefaultApp)
-	assert.Equal(t, "dev", ctx.DefaultEnv)
+	assert.Empty(t, ctx.DefaultApp)
+	assert.Equal(t, testEnvDev, ctx.DefaultEnv)
 }

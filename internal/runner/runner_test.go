@@ -85,3 +85,42 @@ func TestExitErrorDetectionUsesAsType(t *testing.T) {
 	_, ok = errors.AsType[*exec.ExitError](otherErr)
 	assert.False(t, ok)
 }
+
+// --- Contract assertions ---
+// These verify the file-sink design contracts. Do NOT modify
+// without updating the approved plan.
+
+var _ error = (*ExitError)(nil)
+
+func TestExitErrorMessage(t *testing.T) {
+	err := &ExitError{Code: 3}
+	assert.Equal(t, "command exited with code 3", err.Error())
+}
+
+func TestRunReturnsExitErrorInsteadOfExiting(t *testing.T) {
+	r := NewRunner(map[string]string{})
+	err := r.Run(t.Context(), []string{"sh", "-c", "exit 7"})
+	require.Error(t, err)
+
+	exitErr, ok := errors.AsType[*ExitError](err)
+	require.True(t, ok, "expected *ExitError, got %T", err)
+	assert.Equal(t, 7, exitErr.Code)
+}
+
+func TestRunSuccessReturnsNil(t *testing.T) {
+	r := NewRunner(map[string]string{"RUNNER_TEST_VAR": "ok"})
+	err := r.Run(t.Context(), []string{"sh", "-c", `test "$RUNNER_TEST_VAR" = ok`})
+	require.NoError(t, err)
+}
+
+func TestRunDeferredCleanupObservable(t *testing.T) {
+	// Before this change, a non-zero child called os.Exit inside Run and no
+	// code after Run could execute. This test only passes if Run returns.
+	cleaned := false
+	func() {
+		defer func() { cleaned = true }()
+		r := NewRunner(map[string]string{})
+		_ = r.Run(t.Context(), []string{"sh", "-c", "exit 1"})
+	}()
+	assert.True(t, cleaned)
+}

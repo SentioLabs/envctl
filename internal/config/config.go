@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sentiolabs/envctl/internal/errors"
@@ -25,6 +28,9 @@ const (
 	Backend1Pass = "1pass"
 )
 
+// envVarNamePattern matches a POSIX-portable environment variable name.
+var envVarNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 // Config represents the root configuration structure.
 // YAML tags use snake_case for consistency with standard YAML conventions.
 //
@@ -35,6 +41,7 @@ type Config struct {
 	DefaultEnvironment string                  `yaml:"default_environment,omitempty"`
 	DefaultBackend     string                  `yaml:"default_backend,omitempty"`
 	IncludeAll         *bool                   `yaml:"include_all,omitempty"`
+	FilesDirAs         string                  `yaml:"files_dir_as,omitempty"`
 	AWS                *AWSConfig              `yaml:"aws,omitempty"`
 	OnePass            *OnePassConfig          `yaml:"1pass,omitempty"`
 	Applications       map[string]*Application `yaml:"applications,omitempty"`
@@ -50,6 +57,7 @@ type Application struct {
 	Environments map[string]Environment `yaml:",inline"`
 	Mapping      map[string]string      `yaml:"mapping,omitempty"`
 	IncludeAll   *bool                  `yaml:"include_all,omitempty"`
+	FilesDirAs   string                 `yaml:"files_dir_as,omitempty"` // env var for the ephemeral run dir
 }
 
 // CacheConfig represents cache configuration.
@@ -119,15 +127,37 @@ func PromoteBackend(src *IncludeEntry) {
 	}
 }
 
+// legacyEnvironmentKeys are the only keys the single-secret mapping form accepts.
+var legacyEnvironmentKeys = map[string]bool{
+	"secret": true, "backend": true, "include_all": true, "aws": true, "1pass": true,
+}
+
+// checkKnownKeys rejects mapping keys outside allowed. yaml.Node.Decode does not
+// honor the top-level decoder's KnownFields setting, so the legacy branch has to
+// enforce strictness itself.
+func checkKnownKeys(node *yaml.Node, allowed map[string]bool) error {
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i].Value
+		if !allowed[key] {
+			return fmt.Errorf("unknown field %q in environment (line %d); use the list form for key, keys, as, or file",
+				key, node.Content[i].Line)
+		}
+	}
+	return nil
+}
+
 // UnmarshalYAML implements custom YAML unmarshaling to support both
 // legacy mapping format and new sequence format.
 func (e *Environment) UnmarshalYAML(value *yaml.Node) error {
 	switch value.Kind {
 	case yaml.MappingNode:
 		// Legacy single-secret format: {secret: "...", aws: {...}, include_all: true}
+		if err := checkKnownKeys(value, legacyEnvironmentKeys); err != nil {
+			return err
+		}
 		//nolint:tagliatelle // Using snake_case for YAML field names is intentional
 		var legacy struct {
-			Secret     string         `yaml:"secret"`            //nolint:gosec // G117: refers to secret ref, not creds
+			Secret     string         `yaml:"secret"`
 			Backend    string         `yaml:"backend,omitempty"` // routing hint
 			IncludeAll *bool          `yaml:"include_all,omitempty"`
 			AWS        *AWSConfig     `yaml:"aws,omitempty"`
@@ -171,9 +201,38 @@ type KeyMapping struct {
 	As  string `yaml:"as,omitempty"`
 }
 
+// FileSink materializes a source as a file instead of an environment variable.
+// Exactly one of Name or Path is set. Name places the file in the per-run
+// ephemeral directory. Path writes to an explicit, persistent location.
+//
+//nolint:tagliatelle // Using snake_case for YAML field names is intentional
+type FileSink struct {
+	Name   string `yaml:"name,omitempty"` // ephemeral: bare filename under the run directory
+	Path   string `yaml:"path,omitempty"` // persistent: explicit path, ~ and ${VAR} expanded
+	Mode   string `yaml:"mode,omitempty"` // octal string, default "0600"
+	PathAs string `yaml:"path_as"`        // env var that receives the absolute path
+}
+
+// DefaultFileMode is the mode a file sink gets when mode is unset.
+const DefaultFileMode os.FileMode = 0o600
+
+// Persistent reports whether the sink writes to an explicit path.
+func (f *FileSink) Persistent() bool { return f.Path != "" }
+
+// FileMode returns the parsed mode, defaulting to 0600.
+func (f *FileSink) FileMode() (os.FileMode, error) {
+	if f.Mode == "" {
+		return DefaultFileMode, nil
+	}
+	n, err := strconv.ParseUint(f.Mode, 8, 32)
+	if err != nil || n > 0o777 {
+		return 0, fmt.Errorf("invalid file mode %q (expected octal such as \"0600\")", f.Mode)
+	}
+	return os.FileMode(n), nil
+}
+
 // IncludeEntry represents an additional secret to include.
 type IncludeEntry struct {
-	//nolint:gosec // G117: field name refers to a secret reference, not credentials
 	Secret  string         `yaml:"secret"`
 	Key     string         `yaml:"key,omitempty"`
 	As      string         `yaml:"as,omitempty"`
@@ -181,6 +240,7 @@ type IncludeEntry struct {
 	Backend string         `yaml:"backend,omitempty"` // "aws" or "1pass": routing hint when no aws:/1pass: block
 	AWS     *AWSConfig     `yaml:"aws,omitempty"`
 	OnePass *OnePassConfig `yaml:"1pass,omitempty"`
+	File    *FileSink      `yaml:"file,omitempty"` // write content to a file instead of the environment
 }
 
 // Load reads and parses a config file from the given path.
@@ -244,7 +304,7 @@ func FindConfigFrom(startPath string) (string, error) {
 
 // Validate checks the config for required fields and valid values.
 //
-//nolint:revive // Config validation requires checking multiple conditions in sequence
+//nolint:revive,gocognit // Config validation requires checking multiple conditions in sequence
 func (c *Config) Validate(path string) error {
 	if c.Version != CurrentVersion {
 		return &errors.ConfigError{
@@ -278,6 +338,12 @@ func (c *Config) Validate(path string) error {
 		}
 	}
 
+	if c.FilesDirAs != "" {
+		if err := validateEnvVarName(c.FilesDirAs, "files_dir_as", path); err != nil {
+			return err
+		}
+	}
+
 	// Must have either applications or environments (or both for migration)
 	if len(c.Applications) == 0 && len(c.Environments) == 0 {
 		return &errors.ConfigError{
@@ -292,6 +358,11 @@ func (c *Config) Validate(path string) error {
 			return &errors.ConfigError{
 				Path:    path,
 				Message: "application " + appName + " has no environments defined",
+			}
+		}
+		if app.FilesDirAs != "" {
+			if err := validateEnvVarName(app.FilesDirAs, "application "+appName+" files_dir_as", path); err != nil {
+				return err
 			}
 		}
 		for envName, env := range app.Environments {
@@ -359,8 +430,11 @@ func validateEnvironment(env Environment, location, path string) error {
 		if err := validateIncludeKeys(src, loc, path); err != nil {
 			return err
 		}
+		if err := validateFileSink(src, loc, path); err != nil {
+			return err
+		}
 	}
-	return nil
+	return validateFileSinkSet(env, location, path)
 }
 
 // validateBackendField checks that the backend field value is valid and doesn't conflict
@@ -412,6 +486,97 @@ func validateIncludeKeys(inc IncludeEntry, location, path string) error {
 				Path:    path,
 				Message: fmt.Sprintf("%s keys[%d] is missing required 'key' field", location, j),
 			}
+		}
+	}
+	return nil
+}
+
+// validateEnvVarName checks that name is usable as an environment variable name.
+func validateEnvVarName(name, what, path string) error {
+	if !envVarNamePattern.MatchString(name) {
+		return &errors.ConfigError{
+			Path:    path,
+			Message: fmt.Sprintf("%s %q is not a valid environment variable name", what, name),
+		}
+	}
+	return nil
+}
+
+// validateFileSink checks a single source's file block.
+func validateFileSink(src IncludeEntry, location, path string) error {
+	f := src.File
+	if f == nil {
+		return nil
+	}
+	fail := func(msg string) error {
+		return &errors.ConfigError{Path: path, Message: location + " file: " + msg}
+	}
+	if (f.Name == "") == (f.Path == "") {
+		return fail("exactly one of 'name' or 'path' must be set")
+	}
+	if f.Name != "" {
+		if f.Name == "." || f.Name == ".." || strings.ContainsAny(f.Name, `/\`) {
+			return fail(fmt.Sprintf("name %q must be a bare filename", f.Name))
+		}
+	}
+	if _, err := f.FileMode(); err != nil {
+		return fail(err.Error())
+	}
+	if f.PathAs == "" {
+		return fail("missing required 'path_as' field")
+	}
+	if err := validateEnvVarName(f.PathAs, location+" file path_as", path); err != nil {
+		return err
+	}
+	if len(src.Keys) > 0 {
+		return fail("cannot combine 'file' with 'keys'")
+	}
+	if src.As != "" {
+		return fail("cannot combine 'file' with 'as'")
+	}
+	return nil
+}
+
+// validateFileSinkSet checks uniqueness across all sinks in one environment.
+func validateFileSinkSet(env Environment, location, path string) error {
+	seenPathAs := make(map[string]int)
+	seenName := make(map[string]int)
+	seenPath := make(map[string]int)
+	for i, src := range env.Sources {
+		f := src.File
+		if f == nil {
+			continue
+		}
+		if j, dup := seenPathAs[f.PathAs]; dup {
+			return &errors.ConfigError{
+				Path: path,
+				Message: fmt.Sprintf(
+					"%s source[%d] duplicate path_as %q (also used by source[%d])", location, i, f.PathAs, j,
+				),
+			}
+		}
+		seenPathAs[f.PathAs] = i
+		if f.Name != "" {
+			if j, dup := seenName[f.Name]; dup {
+				return &errors.ConfigError{
+					Path: path,
+					Message: fmt.Sprintf(
+						"%s source[%d] duplicate file name %q (also used by source[%d])", location, i, f.Name, j,
+					),
+				}
+			}
+			seenName[f.Name] = i
+		}
+		if f.Path != "" {
+			if j, dup := seenPath[f.Path]; dup {
+				return &errors.ConfigError{
+					Path: path,
+					Message: fmt.Sprintf(
+						"%s source[%d] duplicate file path %q (also used by source[%d])", location, i, f.Path, j,
+					),
+				}
+			}
+			seenPath[f.Path] = i
 		}
 	}
 	return nil
@@ -600,4 +765,13 @@ func (c *Config) ShouldIncludeAll(app *Application, env *Environment) bool {
 	}
 	// Default: mappings-only mode
 	return false
+}
+
+// ResolveFilesDirAs returns the files_dir_as variable name with precedence app > global.
+// Returns "" when neither level sets it.
+func (c *Config) ResolveFilesDirAs(app *Application) string {
+	if app != nil && app.FilesDirAs != "" {
+		return app.FilesDirAs
+	}
+	return c.FilesDirAs
 }

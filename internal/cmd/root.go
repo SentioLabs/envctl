@@ -3,13 +3,16 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/sentiolabs/envctl/internal/cache"
 	"github.com/sentiolabs/envctl/internal/config"
 	"github.com/sentiolabs/envctl/internal/env"
+	"github.com/sentiolabs/envctl/internal/runner"
 	"github.com/sentiolabs/envctl/internal/secrets"
 	"github.com/spf13/cobra"
 )
@@ -38,6 +41,9 @@ generate .env files for Docker Compose workflows.`,
 	}
 )
 
+// newSecretsClient is the factory used to create backend clients. Tests replace it.
+var newSecretsClient = secrets.NewClient
+
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "config file path (default: .envctl.yaml)")
 	rootCmd.PersistentFlags().StringVarP(&appName, "app", "a", "", "application name (default: from config)")
@@ -54,11 +60,16 @@ func init() {
 	_ = rootCmd.RegisterFlagCompletionFunc("env", completeEnvironmentNames)
 }
 
-// Execute runs the root command.
+// Execute runs the root command. A *runner.ExitError from envctl run is
+// turned into the child's exit code only here, after every deferred cleanup
+// in the command has already run.
 //
 //nolint:revive // CLI output to stderr always succeeds
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		if exitErr, ok := errors.AsType[*runner.ExitError](err); ok {
+			os.Exit(exitErr.Code)
+		}
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
@@ -116,7 +127,7 @@ func createSecretsClient(
 		}
 	}
 
-	return secrets.NewClient(ctx, secrets.Options{
+	return newSecretsClient(ctx, secrets.Options{
 		Config:  cfg,
 		Env:     envConfig,
 		Cache:   cacheManager,
@@ -207,6 +218,14 @@ func loadConfigForCompletion() *config.Config {
 	return cfg
 }
 
+// resolveConfigPath returns the --config value or the nearest .envctl.yaml.
+func resolveConfigPath() (string, error) {
+	if configFile != "" {
+		return configFile, nil
+	}
+	return config.FindConfig()
+}
+
 // resolveEnvironmentConfig resolves the environment config based on mode.
 // Returns the environment config and, if in application mode, the application config.
 func resolveEnvironmentConfig(cfg *config.Config) (*config.Environment, *config.Application, error) {
@@ -234,31 +253,38 @@ func getIncludeAllOverride(cmd *cobra.Command) *bool {
 	return nil
 }
 
-// loadAndBuild loads config, creates a secrets client, and builds environment entries.
-// This consolidates the common config→client→builder pattern used by env, run, export, and get commands.
-func loadAndBuild(
+// buildOutput is what loadAndBuildFiles produces. Close files to remove the
+// ephemeral run directory once the consuming process has exited.
+type buildOutput struct {
+	entries []env.Entry
+	cfg     *config.Config
+	files   *materialized
+}
+
+// loadAndBuildFiles loads config, creates a secrets client, resolves entries
+// and file sinks, writes the sinks according to mode, and merges their path
+// variables into the entries. Path variables land after mappings and never
+// displace --set overrides.
+func loadAndBuildFiles(
 	ctx context.Context,
 	cmd *cobra.Command,
 	overrides map[string]string,
-) ([]env.Entry, *config.Config, error) {
-	configPath := configFile
-	if configPath == "" {
-		var err error
-		configPath, err = config.FindConfig()
-		if err != nil {
-			return nil, nil, err
-		}
+	mode sinkMode,
+) (*buildOutput, error) {
+	configPath, err := resolveConfigPath()
+	if err != nil {
+		return nil, err
 	}
 	verboseLog("Using config: %s", configPath)
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	envConfig, _, err := resolveEnvironmentConfig(cfg)
+	envConfig, app, err := resolveEnvironmentConfig(cfg)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	selectedEnv := envName
@@ -269,18 +295,41 @@ func loadAndBuild(
 
 	client, err := createSecretsClient(ctx, cfg, envConfig)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	builder := env.NewBuilder(client, cfg, appName, envName).
 		WithIncludeAll(getIncludeAllOverride(cmd)).
 		WithOptions(env.BuilderOptions{NoCache: noCache, Refresh: refresh})
 
-	entries, err := builder.Build(ctx, overrides)
+	result, err := builder.BuildWithFiles(ctx, overrides)
+	if err != nil {
+		return nil, err
+	}
+
+	files, err := materializeFiles(result.Files, cfg.ResolveFilesDirAs(app), filepath.Dir(configPath), mode)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := mergeEntries(result.Entries, files.entries)
+	verboseLog("Loaded %d environment variables", len(entries))
+
+	return &buildOutput{entries: entries, cfg: cfg, files: files}, nil
+}
+
+// loadAndBuild keeps the historical signature for commands that print to
+// stdout (env, export, get). Persistent sinks are written and their path
+// variables included. Ephemeral sinks are skipped with a stderr warning
+// because there is no process lifetime to bind them to.
+func loadAndBuild(
+	ctx context.Context,
+	cmd *cobra.Command,
+	overrides map[string]string,
+) ([]env.Entry, *config.Config, error) {
+	out, err := loadAndBuildFiles(ctx, cmd, overrides, sinkModePersistentOnly)
 	if err != nil {
 		return nil, nil, err
 	}
-	verboseLog("Loaded %d environment variables", len(entries))
-
-	return entries, cfg, nil
+	return out.entries, out.cfg, nil
 }

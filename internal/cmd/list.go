@@ -37,13 +37,9 @@ func runList(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	// Load config
-	configPath := configFile
-	if configPath == "" {
-		var err error
-		configPath, err = config.FindConfig()
-		if err != nil {
-			return err
-		}
+	configPath, err := resolveConfigPath()
+	if err != nil {
+		return err
 	}
 
 	cfg, err := config.Load(configPath)
@@ -52,7 +48,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve environment config
-	envConfig, _, err := resolveEnvironmentConfig(cfg)
+	envConfig, app, err := resolveEnvironmentConfig(cfg)
 	if err != nil {
 		return err
 	}
@@ -71,6 +67,30 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// File sinks are listed from config alone; their content is never fetched here.
+	entries = append(entries, fileSinkListEntries(cfg, app, envConfig)...)
+
 	// Write list
 	return output.WriteList(os.Stdout, entries, listQuiet)
+}
+
+// fileSinkListEntries returns one entry per file sink (path_as with a
+// file:<secret> source) plus the files_dir_as variable when any sink is
+// ephemeral. Values are left empty: list prints names and sources only.
+func fileSinkListEntries(cfg *config.Config, app *config.Application, envConfig *config.Environment) []env.Entry {
+	var entries []env.Entry
+	ephemeral := false
+	for _, src := range envConfig.Sources {
+		if src.File == nil {
+			continue
+		}
+		if !src.File.Persistent() {
+			ephemeral = true
+		}
+		entries = append(entries, env.Entry{Key: src.File.PathAs, Source: fileSourcePrefix + src.Secret})
+	}
+	if dirAs := cfg.ResolveFilesDirAs(app); dirAs != "" && ephemeral {
+		entries = append(entries, env.Entry{Key: dirAs, Source: "file"})
+	}
+	return entries
 }

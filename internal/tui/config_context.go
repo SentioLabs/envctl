@@ -57,7 +57,7 @@ func extractApplications(cfg *config.Config, ctx *ConfigContext) {
 
 	for _, appName := range ctx.Apps {
 		app := cfg.Applications[appName]
-		var envNames []string
+		envNames := make([]string, 0, len(app.Environments))
 		for envName := range app.Environments {
 			envNames = append(envNames, envName)
 		}
@@ -76,7 +76,7 @@ func extractApplications(cfg *config.Config, ctx *ConfigContext) {
 func extractLegacyEnvironments(cfg *config.Config, ctx *ConfigContext) {
 	ctx.Apps = []string{""}
 
-	var envNames []string
+	envNames := make([]string, 0, len(cfg.Environments))
 	for envName := range cfg.Environments {
 		envNames = append(envNames, envName)
 	}
