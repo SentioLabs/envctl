@@ -8,162 +8,125 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/sentiolabs/envctl/internal/version"
+	"github.com/sentiolabs/go-selfupdate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// testVersionTag is the tagged version string used by the version fixtures.
-const testVersionTag = "v0.1.0"
+const (
+	// selfCmdName is the command group under test.
+	selfCmdName = "self"
+	// tagNameKey and prereleaseKey are the GitHub release JSON fields the
+	// httptest server returns.
+	tagNameKey    = "tag_name"
+	prereleaseKey = "prerelease"
+)
 
-func TestEnsureVPrefix(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "empty string becomes dev version",
-			input:    "",
-			expected: "v0.0.0-dev",
-		},
-		{
-			name:     "dev becomes dev version",
-			input:    testDevEnv,
-			expected: "v0.0.0-dev",
-		},
-		{
-			name:     "version without v prefix gets v added",
-			input:    "0.1.0",
-			expected: testVersionTag,
-		},
-		{
-			name:     "version with v prefix unchanged",
-			input:    testVersionTag,
-			expected: testVersionTag,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := ensureVPrefix(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
+func TestSelfUpdaterWiring(t *testing.T) {
+	u := newSelfUpdater()
+	assert.Equal(t, binaryName, u.Name)
+	src, ok := u.Source.(*selfupdate.GitHubSource)
+	require.True(t, ok)
+	assert.Equal(t, repoOwner, src.Owner)
+	assert.Equal(t, binaryName, src.Repo)
+	inst, ok := u.Installer.(*selfupdate.ScriptInstaller)
+	require.True(t, ok)
+	assert.Equal(t, installScriptURL, inst.ScriptURL)
+	assert.NotNil(t, u.Store)
 }
 
-func TestGetLatestVersion(t *testing.T) {
-	t.Run("success returns tag_name", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal(t, "/latest", r.URL.Path)
-			w.Header().Set("Content-Type", "application/json")
-			err := json.NewEncoder(w).Encode(githubRelease{TagName: "v1.2.3"})
-			assert.NoError(t, err)
-		}))
-		defer server.Close()
+func TestSelfCommandTree(t *testing.T) {
+	self, _, err := rootCmd.Find([]string{selfCmdName})
+	require.NoError(t, err)
+	update, _, err := rootCmd.Find([]string{selfCmdName, "update"})
+	require.NoError(t, err)
+	channel, _, err := rootCmd.Find([]string{selfCmdName, "channel"})
+	require.NoError(t, err)
+	assert.Equal(t, selfCmdName, self.Name())
 
-		original := githubReleasesURL
-		githubReleasesURL = server.URL
-		defer func() { githubReleasesURL = original }()
-
-		ver, err := getLatestVersion()
-		require.NoError(t, err)
-		assert.Equal(t, "v1.2.3", ver)
-	})
-
-	t.Run("non-200 status returns error", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusNotFound)
-		}))
-		defer server.Close()
-
-		original := githubReleasesURL
-		githubReleasesURL = server.URL
-		defer func() { githubReleasesURL = original }()
-
-		_, err := getLatestVersion()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unexpected status")
-	})
-
-	t.Run("invalid JSON returns error", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_, err := w.Write([]byte("not json"))
-			assert.NoError(t, err)
-		}))
-		defer server.Close()
-
-		original := githubReleasesURL
-		githubReleasesURL = server.URL
-		defer func() { githubReleasesURL = original }()
-
-		_, err := getLatestVersion()
-		require.Error(t, err)
-	})
+	check := update.Flags().Lookup("check")
+	require.NotNil(t, check)
+	assert.Empty(t, check.Shorthand, "-c belongs to --config on the root command")
+	assert.Equal(t, "f", update.Flags().Lookup("force").Shorthand)
+	assert.Equal(t, "y", update.Flags().Lookup("yes").Shorthand)
+	assert.Equal(t, "y", channel.Flags().Lookup("yes").Shorthand)
 }
 
-// setupCheckModeTest creates a mock GitHub server and configures the test environment
-// for a self-update check mode test case. It returns the output buffer.
-func setupCheckModeTest(t *testing.T, latestTag, currentVersion string) *bytes.Buffer {
+// withTestReleases points the shared updater at an httptest GitHub and an
+// in-memory store for the duration of the test.
+func withTestReleases(t *testing.T, channel selfupdate.Channel, latest string, list []map[string]any) *bytes.Buffer {
 	t.Helper()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		err := json.NewEncoder(w).Encode(githubRelease{TagName: latestTag})
-		assert.NoError(t, err)
-	}))
-	t.Cleanup(server.Close)
-
-	original := githubReleasesURL
-	githubReleasesURL = server.URL
-	t.Cleanup(func() { githubReleasesURL = original })
-
-	origVersion := version.Version
-	version.Version = currentVersion
-	t.Cleanup(func() { version.Version = origVersion })
-
-	buf := new(bytes.Buffer)
-	selfUpdateCmd.SetOut(buf)
-	selfUpdateCmd.SetErr(buf)
-
-	err := selfUpdateCmd.Flags().Set("check", "true")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err := selfUpdateCmd.Flags().Set("check", "false")
-		if err != nil {
-			t.Logf("failed to reset flag: %v", err)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/sentiolabs/envctl/releases/latest":
+			_ = json.NewEncoder(w).Encode(map[string]any{tagNameKey: latest})
+		case "/repos/sentiolabs/envctl/releases":
+			_ = json.NewEncoder(w).Encode(list)
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
+	}))
+	t.Cleanup(srv.Close)
+
+	prevSource, prevStore := selfUpdater.Source, selfUpdater.Store
+	prevOut, prevErr := selfUpdater.Out, selfUpdater.ErrOut
+	t.Cleanup(func() {
+		selfUpdater.Source, selfUpdater.Store = prevSource, prevStore
+		selfUpdater.Out, selfUpdater.ErrOut = prevOut, prevErr
 	})
-
-	return buf
+	out := &bytes.Buffer{}
+	selfUpdater.Source = &selfupdate.GitHubSource{Owner: repoOwner, Repo: binaryName, BaseURL: srv.URL}
+	selfUpdater.Store = &selfupdate.MemStore{Current: channel}
+	selfUpdater.Out = out
+	selfUpdater.ErrOut = out
+	return out
 }
 
-func TestSelfUpdateCheckMode_UpToDate(t *testing.T) {
-	buf := setupCheckModeTest(t, "v1.0.0", "v1.0.0")
-
-	err := selfUpdateCmd.RunE(selfUpdateCmd, []string{})
-	require.NoError(t, err)
-
-	assert.Contains(t, buf.String(), "up to date")
+func execRoot(t *testing.T, args ...string) error {
+	t.Helper()
+	rootCmd.SetArgs(args)
+	t.Cleanup(func() { rootCmd.SetArgs(nil) })
+	return rootCmd.Execute()
 }
 
-func TestSelfUpdateCheckMode_UpdateAvailable(t *testing.T) {
-	buf := setupCheckModeTest(t, "v2.0.0", "v1.0.0")
-
-	err := selfUpdateCmd.RunE(selfUpdateCmd, []string{})
-	require.NoError(t, err)
-
-	output := buf.String()
-	assert.Contains(t, output, "v2.0.0")
-	assert.Contains(t, output, "available")
+func TestSelfUpdateCheck_StableChannel(t *testing.T) {
+	out := withTestReleases(t, selfupdate.ChannelStable, "v9.0.0", nil)
+	require.NoError(t, execRoot(t, selfCmdName, "update", "--check"))
+	assert.Contains(t, out.String(), "Update available: v0.0.0-dev -> v9.0.0 (stable channel)")
 }
 
-func TestSelfUpdateCheckMode_CurrentIsNewer(t *testing.T) {
-	buf := setupCheckModeTest(t, "v1.0.0", "v2.0.0")
+func TestSelfUpdateCheck_RCChannelPrefersRC(t *testing.T) {
+	list := []map[string]any{
+		{tagNameKey: "v9.1.0-rc.1", prereleaseKey: true},
+		{tagNameKey: "v9.0.0", prereleaseKey: false},
+	}
+	out := withTestReleases(t, selfupdate.ChannelRC, "v9.0.0", list)
+	require.NoError(t, execRoot(t, selfCmdName, "update", "--check"))
+	assert.Contains(t, out.String(), "v9.1.0-rc.1 (rc channel)")
+}
 
-	err := selfUpdateCmd.RunE(selfUpdateCmd, []string{})
-	require.NoError(t, err)
+func TestSelfUpdateCheck_RCChannelStableNewerWins(t *testing.T) {
+	list := []map[string]any{
+		{tagNameKey: "v9.2.0", prereleaseKey: false},
+		{tagNameKey: "v9.1.0-rc.1", prereleaseKey: true},
+	}
+	out := withTestReleases(t, selfupdate.ChannelRC, "v9.2.0", list)
+	require.NoError(t, execRoot(t, selfCmdName, "update", "--check"))
+	assert.Contains(t, out.String(), "-> v9.2.0 (rc channel)")
+}
 
-	assert.Contains(t, buf.String(), "newer than latest")
+func TestSelfChannelShowAndSwitch(t *testing.T) {
+	out := withTestReleases(t, selfupdate.ChannelStable, "v1.0.0", nil)
+	require.NoError(t, execRoot(t, selfCmdName, "channel"))
+	assert.Contains(t, out.String(), "Current update channel: stable")
+
+	out.Reset()
+	require.NoError(t, execRoot(t, selfCmdName, "channel", "rc", "-y"))
+	assert.Contains(t, out.String(), "Switched to rc channel")
+	store := selfUpdater.Store.(*selfupdate.MemStore)
+	assert.Equal(t, selfupdate.ChannelRC, store.Current)
+
+	err := execRoot(t, selfCmdName, "channel", "bogus", "-y")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid channel")
 }
