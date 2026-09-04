@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   nightly:
@@ -44,6 +45,8 @@ jobs:
 
       - name: Create nightly tag
         if: steps.check.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DATE=$(date -u +%Y%m%d)
           TAG="v${{ steps.version.outputs.next }}-nightly.${DATE}"
@@ -52,6 +55,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "Nightly build $DATE"
           git push origin "$TAG"
+          gh workflow run prerelease.yml --ref "$TAG"
 
   cleanup:
     runs-on: ubuntu-latest
