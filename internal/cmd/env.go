@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"os"
 
 	"github.com/sentiolabs/envctl/internal/output"
@@ -34,7 +33,7 @@ func init() {
 }
 
 func runEnv(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := commandContext(cmd)
 
 	entries, cfg, err := loadAndBuild(ctx, cmd, nil)
 	if err != nil {

@@ -43,7 +43,7 @@ func init() {
 //
 //nolint:revive // Validation requires checking multiple conditions; stdout writes always succeed
 func runValidate(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := commandContext(cmd)
 
 	// Load config
 	configPath, err := resolveConfigPath()

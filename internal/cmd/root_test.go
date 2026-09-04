@@ -3,7 +3,10 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/sentiolabs/envctl/internal/config"
 	"github.com/spf13/cobra"
@@ -141,12 +144,12 @@ func TestOutputCommandsMentionFileSinks(t *testing.T) {
 // whose Done channel is nil, and exec.Cmd then skips its cancellation
 // watcher, so a cancelled context never stops an install pipeline.
 func TestExecuteRootGivesCommandsACancellableContext(t *testing.T) {
-	var done <-chan struct{}
+	var probeCtx context.Context
 	probe := &cobra.Command{
 		Use:    "ctxprobe",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			done = cmd.Context().Done()
+			probeCtx = cmd.Context()
 			return nil
 		},
 	}
@@ -161,5 +164,38 @@ func TestExecuteRootGivesCommandsACancellableContext(t *testing.T) {
 	})
 
 	assert.Zero(t, executeRoot())
-	assert.NotNil(t, done, "commands must get a context that cancels on SIGINT or SIGTERM")
+	require.NotNil(t, probeCtx)
+	assert.NotNil(t, probeCtx.Done(), "commands must get a context that cancels on SIGINT or SIGTERM")
+	// executeRoot's deferred stop cancels the context it handed down, so a
+	// command that outlives it cannot keep using a dead signal context.
+	assert.ErrorIs(t, probeCtx.Err(), context.Canceled)
+}
+
+// TestSignalContextCancelsOnSIGINT delivers a real SIGINT to the test
+// process. signalContext has a handler installed at that point, so the
+// signal cancels the context instead of killing the binary.
+func TestSignalContextCancelsOnSIGINT(t *testing.T) {
+	ctx, stop := signalContext()
+	defer stop()
+
+	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGINT))
+
+	select {
+	case <-ctx.Done():
+		require.ErrorIs(t, ctx.Err(), context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("SIGINT did not cancel the signal context")
+	}
+}
+
+// TestCommandContextFallsBackToBackground covers the RunE functions the
+// tests call directly, where cobra never attached a context.
+func TestCommandContextFallsBackToBackground(t *testing.T) {
+	assert.NotNil(t, commandContext(&cobra.Command{Use: "bare"}))
+
+	withCtx := &cobra.Command{Use: "withctx"}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	withCtx.SetContext(ctx)
+	assert.Equal(t, ctx, commandContext(withCtx))
 }

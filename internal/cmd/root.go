@@ -78,7 +78,7 @@ func Execute() {
 //
 //nolint:revive // CLI output to stderr always succeeds
 func executeRoot() int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signalContext()
 	defer stop()
 
 	err := rootCmd.ExecuteContext(ctx)
@@ -90,6 +90,30 @@ func executeRoot() int {
 	}
 	fmt.Fprintln(os.Stderr, "Error:", err)
 	return 1
+}
+
+// signalContext returns a context that the first SIGINT or SIGTERM cancels,
+// and a stop that releases the handler. Once the first signal has cancelled
+// the context, the handler is released too. A second signal then gets the
+// default disposition and kills the process, so a command that ignores its
+// context still dies on a second Ctrl-C.
+func signalContext() (context.Context, context.CancelFunc) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
+	return ctx, stop
+}
+
+// commandContext returns the context cobra attached to cmd. It falls back to
+// context.Background() because the tests call the RunE functions directly
+// with commands that never went through Execute.
+func commandContext(cmd *cobra.Command) context.Context {
+	if ctx := cmd.Context(); ctx != nil {
+		return ctx
+	}
+	return context.Background()
 }
 
 // verboseLog prints a message if verbose mode is enabled.

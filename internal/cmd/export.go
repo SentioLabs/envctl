@@ -3,7 +3,6 @@
 package cmd
 
 import (
-	"context"
 	"os"
 
 	"github.com/sentiolabs/envctl/internal/output"
@@ -44,7 +43,7 @@ func init() {
 
 // runExport outputs secrets in the requested format.
 func runExport(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := commandContext(cmd)
 
 	format, err := output.ParseFormat(exportFormat)
 	if err != nil {
