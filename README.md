@@ -98,10 +98,31 @@ make build
 ### Updating
 
 ```bash
-envctl self update
+envctl self update           # update to the newest release on your channel
+envctl self update --check   # show what would be installed
+envctl self update -y        # skip the confirmation prompt
 ```
 
-This checks GitHub for the latest release and updates in place. Use `--check` to see if an update is available without installing.
+#### Release channels
+
+`self update` follows one of three channels:
+
+| Channel | Serves | Tag shape |
+|---|---|---|
+| `stable` | Official releases (default) | `v1.3.0` |
+| `rc` | Release candidates | `v1.4.0-rc.1` |
+| `nightly` | Daily builds from `main` | `v1.3.1-nightly.20260904` |
+
+```bash
+envctl self channel          # show the current channel
+envctl self channel rc       # switch (asks for confirmation)
+envctl self channel rc -y    # switch without prompting
+envctl self channel stable   # back to releases
+```
+
+A newer stable release always wins. On the `rc` channel you are offered `v1.4.0` the moment it ships, even if `v1.4.0-rc.3` is what you have.
+
+The channel is stored in `$XDG_CONFIG_HOME/envctl/config.yaml` (default `~/.config/envctl/config.yaml`), separate from the project's `.envctl.yaml`, so a team never inherits one developer's opt-in.
 
 ### Shell Completions
 
@@ -132,6 +153,17 @@ source <(envctl completion zsh)
 ```
 
 After installing completions, restart your shell or source your profile.
+
+### Cutting a release candidate
+
+Release candidates are manual tags on `main` using the next version and a dotted counter. The dot matters: semver compares `rc.10` and `rc.9` numerically but `rc10` and `rc9` lexically.
+
+```bash
+git tag -a v0.9.0-rc.1 -m "v0.9.0-rc.1"
+git push origin v0.9.0-rc.1
+```
+
+The `Pre-release` workflow builds the archives and publishes a GitHub prerelease. Nightlies need no action: a scheduled workflow tags `v<next patch>-nightly.<date>` whenever `main` has new commits and removes nightlies older than seven days.
 
 ## Quick Start
 
