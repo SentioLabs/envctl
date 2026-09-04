@@ -2,6 +2,34 @@
 
 All notable changes to envctl will be documented in this file.
 
+## [0.7.0](https://github.com/SentioLabs/envctl/compare/v0.6.0...v0.7.0) (2026-09-04)
+
+
+### Features
+
+* **aws:** return raw secret content for file sinks ([46dc04c](https://github.com/SentioLabs/envctl/commit/46dc04c967791f06a35a0c252335b7742fdfdc64))
+* **cmd:** cancel commands on SIGINT and SIGTERM ([e81bec4](https://github.com/SentioLabs/envctl/commit/e81bec43c02cab275a020ae727b75e080fd264bf))
+* **cmd:** materialize file sinks in run and add clean ([d037111](https://github.com/SentioLabs/envctl/commit/d037111b1ba834de1a2dca543f83074abd23f715))
+* **cmd:** report file sinks in list and validate ([968395a](https://github.com/SentioLabs/envctl/commit/968395a113482674e2320a30b5f0a0c0b316de33))
+* **config:** add file sink types and RawReader contract ([5238496](https://github.com/SentioLabs/envctl/commit/523849694b5648ed4e27163beeeb9714c72f0748))
+* **config:** validate file sink blocks ([9b67eb1](https://github.com/SentioLabs/envctl/commit/9b67eb1551aea36b9187b4ab1b1bd538eee7f67e))
+* **env:** resolve file sinks separately from environment entries ([e95baa7](https://github.com/SentioLabs/envctl/commit/e95baa70e93b9e1de318f3220991542e6c558138))
+* **filesink:** add atomic 0600 file writer with git check-ignore guard ([85420af](https://github.com/SentioLabs/envctl/commit/85420af3399956d252c388c2de7d314298a98037))
+* materialize secrets as files with file sinks ([c22a015](https://github.com/SentioLabs/envctl/commit/c22a0156244338b1a9feb20ee333b8d5dfbbcab8))
+* **self:** add release channels via go-selfupdate ([65c855e](https://github.com/SentioLabs/envctl/commit/65c855e0dba251dd66e9eeef39a1ed98c7672bab))
+* **self:** release channels via go-selfupdate ([37efe86](https://github.com/SentioLabs/envctl/commit/37efe86ab33918a15e790309ef14e1269072298b))
+* **userconfig:** add per-user config and channel store ([bec24e5](https://github.com/SentioLabs/envctl/commit/bec24e5a337f6ef6e72452ebb060cd72d2f1f7f7))
+
+
+### Bug Fixes
+
+* **cmd:** force exit on a second SIGINT or SIGTERM ([f27d153](https://github.com/SentioLabs/envctl/commit/f27d153325ff6cf0289fc270b21289a955b6c9de))
+* **cmd:** honor Ctrl-C in secret fetching commands ([2d50973](https://github.com/SentioLabs/envctl/commit/2d50973eb5ab0835b77cf81d8d088030c8e29129))
+* **cmd:** trap signals before file sinks are written ([7f9fd30](https://github.com/SentioLabs/envctl/commit/7f9fd30717c028309c4cdb779687c41bb22fc609))
+* **config:** reject unknown keys in legacy environment form ([00a23f4](https://github.com/SentioLabs/envctl/commit/00a23f4e3f88d91a5ab7ca4a97eee4580907be90))
+* **run:** keep forwarding signals after a second Ctrl-C ([5b5cf62](https://github.com/SentioLabs/envctl/commit/5b5cf6255a24389a21f6c641212ad3e9603b08b6))
+* **runner:** return ExitError instead of calling os.Exit ([1e3f4a1](https://github.com/SentioLabs/envctl/commit/1e3f4a10a169eac1fec1d79c7be58aaa36dde382))
+
 ## [0.6.0](https://github.com/SentioLabs/envctl/compare/v0.5.0...v0.6.0) (2026-03-19)
 
 
