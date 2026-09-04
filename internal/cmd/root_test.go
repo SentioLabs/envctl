@@ -2,9 +2,14 @@
 package cmd
 
 import (
+	"context"
+	"os"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/sentiolabs/envctl/internal/config"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -132,4 +137,91 @@ func TestOutputCommandsMentionFileSinks(t *testing.T) {
 	assert.Contains(t, envCmd.Long, "file.path")
 	assert.Contains(t, exportCmd.Long, "file.path")
 	assert.Contains(t, getCmd.Long, "file.path")
+}
+
+// TestExecuteRootGivesCommandsACancellableContext guards the ExecuteContext
+// wiring. Under plain Execute cobra hands commands context.Background(),
+// whose Done channel is nil, and exec.Cmd then skips its cancellation
+// watcher, so a cancelled context never stops an install pipeline.
+func TestExecuteRootGivesCommandsACancellableContext(t *testing.T) {
+	var probeCtx context.Context
+	probe := &cobra.Command{
+		Use:    "ctxprobe",
+		Hidden: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			probeCtx = cmd.Context()
+			return nil
+		},
+	}
+	rootCmd.AddCommand(probe)
+	rootCmd.SetArgs([]string{"ctxprobe"})
+	// executeRoot leaves its cancelled signal context on rootCmd, and cobra
+	// reuses a stored context for every later Execute.
+	t.Cleanup(func() {
+		rootCmd.RemoveCommand(probe)
+		rootCmd.SetArgs(nil)
+		rootCmd.SetContext(context.Background())
+	})
+
+	assert.Zero(t, executeRoot())
+	require.NotNil(t, probeCtx)
+	assert.NotNil(t, probeCtx.Done(), "commands must get a context that cancels on SIGINT or SIGTERM")
+	// executeRoot's deferred stop cancels the context it handed down, so a
+	// command that outlives it cannot keep using a dead signal context.
+	assert.ErrorIs(t, probeCtx.Err(), context.Canceled)
+}
+
+// TestSignalContextCancelsOnSIGINT delivers a real SIGINT to the test
+// process. signalContext has a handler installed at that point, so the
+// signal cancels the context instead of killing the binary.
+func TestSignalContextCancelsOnSIGINT(t *testing.T) {
+	ctx, stop := signalContext()
+	defer stop()
+
+	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGINT))
+
+	select {
+	case <-ctx.Done():
+		require.ErrorIs(t, ctx.Err(), context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("SIGINT did not cancel the signal context")
+	}
+}
+
+// TestCommandContextFallsBackToBackground covers the RunE functions the
+// tests call directly, where cobra never attached a context.
+func TestCommandContextFallsBackToBackground(t *testing.T) {
+	assert.NotNil(t, commandContext(&cobra.Command{Use: "bare"}))
+
+	withCtx := &cobra.Command{Use: "withctx"}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	withCtx.SetContext(ctx)
+	assert.Equal(t, ctx, commandContext(withCtx))
+}
+
+// TestReleaseRootSignalsIsSafeBeforeArmingAndIdempotent covers the two calls
+// that must do nothing: one before any handler exists and a repeat.
+func TestReleaseRootSignalsIsSafeBeforeArmingAndIdempotent(t *testing.T) {
+	rootSignalsMu.Lock()
+	rootSignals = nil
+	rootSignalsMu.Unlock()
+
+	releaseRootSignals()
+
+	ctx, stop := signalContext()
+	defer stop()
+	rootSignalsMu.Lock()
+	armed := rootSignals
+	rootSignalsMu.Unlock()
+	require.NotNil(t, armed, "signalContext must record the channel it armed")
+
+	releaseRootSignals()
+	releaseRootSignals()
+
+	rootSignalsMu.Lock()
+	released := rootSignals
+	rootSignalsMu.Unlock()
+	assert.Nil(t, released)
+	assert.NoError(t, ctx.Err(), "releasing the handler must not cancel the context")
 }

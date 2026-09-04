@@ -68,6 +68,13 @@ func runRun(cmd *cobra.Command, args []string) error {
 	sigCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
+	// Run forwards signals to the child and waits for it, so the root force
+	// exit on a second Ctrl-C would skip the cleanup below and leave the run
+	// directory, with its secret files, on disk. Release the root handler
+	// only now that this command's own trap is registered, so no signal falls
+	// back to the default disposition in between.
+	releaseRootSignals()
+
 	overrides := parseOverrides(setFlags)
 
 	out, err := loadAndBuildFiles(sigCtx, cmd, overrides, sinkModeRun)

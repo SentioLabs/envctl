@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
+	"sync"
+	"syscall"
 
 	"github.com/sentiolabs/envctl/internal/cache"
 	"github.com/sentiolabs/envctl/internal/config"
@@ -60,19 +63,97 @@ func init() {
 	_ = rootCmd.RegisterFlagCompletionFunc("env", completeEnvironmentNames)
 }
 
-// Execute runs the root command. A *runner.ExitError from envctl run is
-// turned into the child's exit code only here, after every deferred cleanup
-// in the command has already run.
+// Execute runs the root command and exits with the resulting code. A
+// *runner.ExitError from envctl run is turned into the child's exit code
+// only here, after every deferred cleanup in the command has already run.
+func Execute() {
+	os.Exit(executeRoot())
+}
+
+// executeRoot runs the root command under a context that cancels on SIGINT or
+// SIGTERM and maps the command error to a process exit code. Commands that
+// read cmd.Context() get a live Done channel, so exec.Cmd inside them (the
+// install pipeline behind self update) starts its cancellation watcher.
+// envctl run keeps its own signal trap and hands the runner an uncancelled
+// context, so a forwarded signal never becomes a SIGKILL.
 //
 //nolint:revive // CLI output to stderr always succeeds
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		if exitErr, ok := errors.AsType[*runner.ExitError](err); ok {
-			os.Exit(exitErr.Code)
-		}
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
+func executeRoot() int {
+	ctx, stop := signalContext()
+	defer stop()
+
+	err := rootCmd.ExecuteContext(ctx)
+	if err == nil {
+		return 0
 	}
+	if exitErr, ok := errors.AsType[*runner.ExitError](err); ok {
+		return exitErr.Code
+	}
+	fmt.Fprintln(os.Stderr, "Error:", err)
+	return 1
+}
+
+const (
+	// signalExitBase is the shell convention for a process killed by a
+	// signal: 128 plus the signal number.
+	signalExitBase = 128
+	// pendingSignals buffers the signal that cancels the context and the one
+	// that forces the exit.
+	pendingSignals = 2
+)
+
+// rootSignals is the channel signalContext armed, guarded because the
+// command goroutine releases it while the handler goroutine reads it.
+var (
+	rootSignalsMu sync.Mutex
+	rootSignals   chan os.Signal
+)
+
+// signalContext returns a context cancelled by the first SIGINT or SIGTERM.
+// A second signal exits the process with 128 plus the signal number, the
+// same status a shell reports for a process killed by that signal.
+func signalContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	sigs := make(chan os.Signal, pendingSignals)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	rootSignalsMu.Lock()
+	rootSignals = sigs
+	rootSignalsMu.Unlock()
+	go func() {
+		<-sigs
+		cancel()
+		s := <-sigs
+		if n, ok := s.(syscall.Signal); ok {
+			os.Exit(signalExitBase + int(n))
+		}
+		os.Exit(1)
+	}()
+	return ctx, func() { signal.Stop(sigs); cancel() }
+}
+
+// releaseRootSignals stops the root handler so the force exit in
+// signalContext can never fire. A command that forwards signals to a child
+// and waits for it calls this, because an os.Exit from the handler goroutine
+// would skip that command's deferred cleanup. Calling it before anything is
+// armed, or more than once, does nothing.
+func releaseRootSignals() {
+	rootSignalsMu.Lock()
+	defer rootSignalsMu.Unlock()
+	if rootSignals == nil {
+		return
+	}
+	signal.Stop(rootSignals)
+	rootSignals = nil
+}
+
+// commandContext returns the context cobra attached to cmd. It falls back to
+// context.Background() because the tests call the RunE functions directly
+// with commands that never went through Execute.
+func commandContext(cmd *cobra.Command) context.Context {
+	if ctx := cmd.Context(); ctx != nil {
+		return ctx
+	}
+	return context.Background()
 }
 
 // verboseLog prints a message if verbose mode is enabled.

@@ -50,7 +50,7 @@ func init() {
 
 // runGet retrieves a single secret value by key name from the configured secrets.
 func runGet(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := commandContext(cmd)
 	key := args[0]
 
 	// If --secret flag is provided, bypass config

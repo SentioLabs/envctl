@@ -56,7 +56,7 @@ func runEdit(cmd *cobra.Command, args []string) error {
 		return errors.New("--item requires --vault")
 	}
 
-	ctx := context.Background()
+	ctx := commandContext(cmd)
 
 	// Load config if available
 	var cfg *config.Config

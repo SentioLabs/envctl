@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"os"
 
 	"github.com/sentiolabs/envctl/internal/config"
@@ -34,7 +33,7 @@ func init() {
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := commandContext(cmd)
 
 	// Load config
 	configPath, err := resolveConfigPath()
