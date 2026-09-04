@@ -3,10 +3,12 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/sentiolabs/go-selfupdate"
 	"github.com/stretchr/testify/assert"
@@ -16,6 +18,8 @@ import (
 const (
 	// selfCmdName is the command group under test.
 	selfCmdName = "self"
+	// updateCmdName is the subcommand that installs a new release.
+	updateCmdName = "update"
 	// tagNameKey and prereleaseKey are the GitHub release JSON fields the
 	// httptest server returns.
 	tagNameKey    = "tag_name"
@@ -129,4 +133,62 @@ func TestSelfChannelShowAndSwitch(t *testing.T) {
 	err := execRoot(t, selfCmdName, "channel", "bogus", "-y")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid channel")
+}
+
+// blockingInstaller stands in for ScriptInstaller. It reports that it
+// started and then returns only once its context is done, so an installer
+// handed a context with a nil Done channel would block forever.
+type blockingInstaller struct{ started chan struct{} }
+
+func (b *blockingInstaller) Install(ctx context.Context, _ string) error {
+	close(b.started)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// TestSelfUpdateCancelsWithRootContext checks that the command context
+// reaches the installer. Cancelling it must end self update instead of
+// leaving it waiting on the install.
+func TestSelfUpdateCancelsWithRootContext(t *testing.T) {
+	withTestReleases(t, selfupdate.ChannelStable, "v9.0.0", nil)
+
+	inst := &blockingInstaller{started: make(chan struct{})}
+	prevInstaller := selfUpdater.Installer
+	t.Cleanup(func() { selfUpdater.Installer = prevInstaller })
+	selfUpdater.Installer = inst
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		select {
+		case <-inst.started:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	// The context goes on the update command itself: cobra copies the root
+	// context down only while the subcommand's own context is nil, and the
+	// --check tests above already stamped context.Background() onto this one.
+	// --check=false is explicit for the same reason, because cobra keeps the
+	// value an earlier Execute parsed into the flag variable.
+	update, _, err := rootCmd.Find([]string{selfCmdName, updateCmdName})
+	require.NoError(t, err)
+	update.SetContext(ctx)
+	rootCmd.SetArgs([]string{selfCmdName, updateCmdName, "-y", "--check=false"})
+	t.Cleanup(func() {
+		rootCmd.SetArgs(nil)
+		update.SetContext(context.Background())
+		rootCmd.SetContext(context.Background())
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- rootCmd.Execute() }()
+
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("self update did not return after its context was cancelled")
+	}
 }

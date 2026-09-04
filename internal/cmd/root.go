@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
+	"syscall"
 
 	"github.com/sentiolabs/envctl/internal/cache"
 	"github.com/sentiolabs/envctl/internal/config"
@@ -60,19 +62,34 @@ func init() {
 	_ = rootCmd.RegisterFlagCompletionFunc("env", completeEnvironmentNames)
 }
 
-// Execute runs the root command. A *runner.ExitError from envctl run is
-// turned into the child's exit code only here, after every deferred cleanup
-// in the command has already run.
+// Execute runs the root command and exits with the resulting code. A
+// *runner.ExitError from envctl run is turned into the child's exit code
+// only here, after every deferred cleanup in the command has already run.
+func Execute() {
+	os.Exit(executeRoot())
+}
+
+// executeRoot runs the root command under a context that cancels on SIGINT or
+// SIGTERM and maps the command error to a process exit code. Commands that
+// read cmd.Context() get a live Done channel, so exec.Cmd inside them (the
+// install pipeline behind self update) starts its cancellation watcher.
+// envctl run keeps its own signal trap and hands the runner an uncancelled
+// context, so a forwarded signal never becomes a SIGKILL.
 //
 //nolint:revive // CLI output to stderr always succeeds
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		if exitErr, ok := errors.AsType[*runner.ExitError](err); ok {
-			os.Exit(exitErr.Code)
-		}
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
+func executeRoot() int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	err := rootCmd.ExecuteContext(ctx)
+	if err == nil {
+		return 0
 	}
+	if exitErr, ok := errors.AsType[*runner.ExitError](err); ok {
+		return exitErr.Code
+	}
+	fmt.Fprintln(os.Stderr, "Error:", err)
+	return 1
 }
 
 // verboseLog prints a message if verbose mode is enabled.

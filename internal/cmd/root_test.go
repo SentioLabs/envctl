@@ -2,9 +2,11 @@
 package cmd
 
 import (
+	"context"
 	"testing"
 
 	"github.com/sentiolabs/envctl/internal/config"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -132,4 +134,32 @@ func TestOutputCommandsMentionFileSinks(t *testing.T) {
 	assert.Contains(t, envCmd.Long, "file.path")
 	assert.Contains(t, exportCmd.Long, "file.path")
 	assert.Contains(t, getCmd.Long, "file.path")
+}
+
+// TestExecuteRootGivesCommandsACancellableContext guards the ExecuteContext
+// wiring. Under plain Execute cobra hands commands context.Background(),
+// whose Done channel is nil, and exec.Cmd then skips its cancellation
+// watcher, so a cancelled context never stops an install pipeline.
+func TestExecuteRootGivesCommandsACancellableContext(t *testing.T) {
+	var done <-chan struct{}
+	probe := &cobra.Command{
+		Use:    "ctxprobe",
+		Hidden: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			done = cmd.Context().Done()
+			return nil
+		},
+	}
+	rootCmd.AddCommand(probe)
+	rootCmd.SetArgs([]string{"ctxprobe"})
+	// executeRoot leaves its cancelled signal context on rootCmd, and cobra
+	// reuses a stored context for every later Execute.
+	t.Cleanup(func() {
+		rootCmd.RemoveCommand(probe)
+		rootCmd.SetArgs(nil)
+		rootCmd.SetContext(context.Background())
+	})
+
+	assert.Zero(t, executeRoot())
+	assert.NotNil(t, done, "commands must get a context that cancels on SIGINT or SIGTERM")
 }
