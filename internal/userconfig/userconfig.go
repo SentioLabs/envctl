@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sentiolabs/go-selfupdate"
+	"github.com/sentiolabs/selfupdate-go"
 	"gopkg.in/yaml.v3"
 )
 

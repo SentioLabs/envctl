@@ -78,9 +78,18 @@ A lightweight CLI tool that enables developers to use a secrets manager as the s
 curl -fsSL https://raw.githubusercontent.com/sentiolabs/envctl/main/scripts/install.sh | bash
 ```
 
-This detects your platform (macOS/Linux, amd64/arm64) and installs the latest release to `/usr/local/bin` or `~/.local/bin`.
+This detects your platform (macOS/Linux, amd64/arm64), verifies the release archive
+against `checksums.txt`, and installs the latest stable release to writable
+`/usr/local/bin` or otherwise `~/.local/bin`. It needs curl or wget, tar, and
+sha256sum or shasum. Re-running it reinstalls the selected release.
+
+Use `bash -s -- --tag=v1.2.3` to select a release. The existing script URL,
+`--force`, `--tag TAG`, `--tag=TAG`, and `TAG`/`FORCE` environment variables
+remain compatible with older envctl updaters; `--force` is now redundant.
 
 ### From Source
+
+Building from source requires Go **1.27.1** or newer.
 
 ```bash
 go install github.com/sentiolabs/envctl/cmd/envctl@latest
@@ -91,9 +100,15 @@ go install github.com/sentiolabs/envctl/cmd/envctl@latest
 ```bash
 git clone https://github.com/sentiolabs/envctl.git
 cd envctl
-make build
+mise install
+mise exec -- task build
 # Binary is at ./bin/envctl
 ```
+
+Tool versions live in `mise.toml`. With mise activated, run `task ci` for the
+local verification suite and `task release-snapshot` to build all release archives.
+Existing `make` targets still forward to Task, including version metadata
+overrides and `make install` to `GOBIN` or `GOPATH/bin`.
 
 ### Updating
 
@@ -102,6 +117,19 @@ envctl self update           # update to the newest release on your channel
 envctl self update --check   # show what would be installed
 envctl self update -y        # skip the confirmation prompt
 ```
+
+Updates use selfupdate-go v0.2.0's native `ArchiveInstaller`: download the
+platform archive, verify SHA-256, and atomically replace the running executable
+at its resolved path. Updates do not invoke the install script, bash, or curl.
+On macOS, the installer attempts ad-hoc code signing and reports signing failures
+as warnings. Package-managed locations (including Homebrew and Nix) are refused
+with upgrade guidance; unwritable destinations return an error instead of
+installing another copy elsewhere.
+
+`--check` downloads no release archives and does not replace the binary. Every
+update invocation, including `--check`, may remove a stale `<binary>.new` left
+by an interrupted update. Checksums detect corruption against the release's
+published manifest; they are not publisher signatures.
 
 #### Release channels
 
@@ -118,6 +146,7 @@ envctl self channel          # show the current channel
 envctl self channel rc       # switch (asks for confirmation)
 envctl self channel rc -y    # switch without prompting
 envctl self channel stable   # back to releases
+envctl self update --force   # allow downgrade when returning from a newer prerelease
 ```
 
 A newer stable release always wins. On the `rc` channel you are offered `v1.4.0` the moment it ships, even if `v1.4.0-rc.3` is what you have.
@@ -163,7 +192,15 @@ git tag -a v0.9.0-rc.1 -m "v0.9.0-rc.1"
 git push origin v0.9.0-rc.1
 ```
 
-The `Pre-release` workflow builds the archives and publishes a GitHub prerelease. Nightlies need no action: a scheduled workflow tags `v<next patch>-nightly.<date>` whenever `main` has new commits and removes nightlies older than seven days.
+Stable and prerelease workflows verify the exact release commit with the same
+lint and Linux/macOS build, vet, and test jobs used by CI before publishing
+archives. Manual `Pre-release` runs must select an rc, alpha, beta, or nightly tag.
+Alpha/beta releases remain publishable but are not additional update channels.
+
+At 06:00 UTC, the nightly workflow tags `v<next patch>-nightly.YYYYMMDD` when
+`main` has new commits. Same-day reruns skip complete releases or retry an
+incomplete release at its original tag commit; existing tags are never moved.
+Nightly releases and their tags expire after seven days.
 
 ## Quick Start
 

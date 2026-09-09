@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sentiolabs/go-selfupdate"
+	"github.com/sentiolabs/selfupdate-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,16 +33,18 @@ func TestSelfUpdaterWiring(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, repoOwner, src.Owner)
 	assert.Equal(t, binaryName, src.Repo)
-	inst, ok := u.Installer.(*selfupdate.ScriptInstaller)
+	inst, ok := u.Installer.(*selfupdate.ArchiveInstaller)
 	require.True(t, ok)
-	assert.Equal(t, installScriptURL, inst.ScriptURL)
+	assert.Equal(t, binaryName, inst.Name)
+	assert.False(t, inst.SkipChecksum)
+	assert.Nil(t, inst.Managed)
 	assert.NotNil(t, u.Store)
 }
 
 func TestSelfCommandTree(t *testing.T) {
 	self, _, err := rootCmd.Find([]string{selfCmdName})
 	require.NoError(t, err)
-	update, _, err := rootCmd.Find([]string{selfCmdName, "update"})
+	update, _, err := rootCmd.Find([]string{selfCmdName, updateCmdName})
 	require.NoError(t, err)
 	channel, _, err := rootCmd.Find([]string{selfCmdName, "channel"})
 	require.NoError(t, err)
@@ -95,7 +97,7 @@ func execRoot(t *testing.T, args ...string) error {
 
 func TestSelfUpdateCheck_StableChannel(t *testing.T) {
 	out := withTestReleases(t, selfupdate.ChannelStable, "v9.0.0", nil)
-	require.NoError(t, execRoot(t, selfCmdName, "update", "--check"))
+	require.NoError(t, execRoot(t, selfCmdName, updateCmdName, "--check"))
 	assert.Contains(t, out.String(), "Update available: v0.0.0-dev -> v9.0.0 (stable channel)")
 }
 
@@ -105,7 +107,7 @@ func TestSelfUpdateCheck_RCChannelPrefersRC(t *testing.T) {
 		{tagNameKey: "v9.0.0", prereleaseKey: false},
 	}
 	out := withTestReleases(t, selfupdate.ChannelRC, "v9.0.0", list)
-	require.NoError(t, execRoot(t, selfCmdName, "update", "--check"))
+	require.NoError(t, execRoot(t, selfCmdName, updateCmdName, "--check"))
 	assert.Contains(t, out.String(), "v9.1.0-rc.1 (rc channel)")
 }
 
@@ -115,7 +117,7 @@ func TestSelfUpdateCheck_RCChannelStableNewerWins(t *testing.T) {
 		{tagNameKey: "v9.1.0-rc.1", prereleaseKey: true},
 	}
 	out := withTestReleases(t, selfupdate.ChannelRC, "v9.2.0", list)
-	require.NoError(t, execRoot(t, selfCmdName, "update", "--check"))
+	require.NoError(t, execRoot(t, selfCmdName, updateCmdName, "--check"))
 	assert.Contains(t, out.String(), "-> v9.2.0 (rc channel)")
 }
 
@@ -135,15 +137,15 @@ func TestSelfChannelShowAndSwitch(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid channel")
 }
 
-// blockingInstaller stands in for ScriptInstaller. It reports that it
+// blockingInstaller stands in for ArchiveInstaller. It reports that it
 // started and then returns only once its context is done, so an installer
 // handed a context with a nil Done channel would block forever.
 type blockingInstaller struct{ started chan struct{} }
 
-func (b *blockingInstaller) Install(ctx context.Context, _ string) error {
+func (b *blockingInstaller) Prepare(ctx context.Context, _ selfupdate.Release) (selfupdate.Staged, error) {
 	close(b.started)
 	<-ctx.Done()
-	return ctx.Err()
+	return nil, ctx.Err()
 }
 
 // TestSelfUpdateCancelsWithRootContext checks that the command context
@@ -191,4 +193,15 @@ func TestSelfUpdateCancelsWithRootContext(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("self update did not return after its context was cancelled")
 	}
+}
+
+func TestSelfUpdateCheck_NightlyTag(t *testing.T) {
+	const nightlyTag = "v9.0.1-nightly.20260909"
+	list := []map[string]any{
+		{tagNameKey: nightlyTag, prereleaseKey: true},
+		{tagNameKey: "v9.0.0", prereleaseKey: false},
+	}
+	out := withTestReleases(t, selfupdate.ChannelNightly, "v9.0.0", list)
+	require.NoError(t, execRoot(t, selfCmdName, updateCmdName, "--check"))
+	assert.Contains(t, out.String(), nightlyTag+" (nightly channel)")
 }

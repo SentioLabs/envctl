@@ -1,6 +1,6 @@
 module github.com/sentiolabs/envctl
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.1
@@ -11,7 +11,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/exp/golden v0.0.0-20260316093931-f2fb44ab3145
-	github.com/sentiolabs/go-selfupdate v0.1.1
+	github.com/sentiolabs/selfupdate-go v0.2.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/zalando/go-keyring v0.2.6
