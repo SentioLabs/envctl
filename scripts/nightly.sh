@@ -12,8 +12,8 @@ release_complete() {
             .draft == false and
             ([.assets[].name] as $names | all(
                 ["linux_amd64", "linux_arm64", "darwin_amd64", "darwin_arm64"][];
-                "envctl_" + $version + "_" + . + ".tar.gz" as $asset |
-                $names | index($asset) != null
+                ("envctl_" + $version + "_" + . + ".tar.gz") as $asset |
+                ($names | index($asset) != null)
             )) and any(.assets[]; .name == "checksums.txt")
         ' --arg version "${tag#v}" >/dev/null && status=0 || status=$?
         [[ "$status" -le 1 ]] || status=2
