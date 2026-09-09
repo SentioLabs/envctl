@@ -53,7 +53,12 @@ main > /dev/null
 [[ "$(git rev-parse "$tag^{commit}")" == "$original" ]]
 [[ "$(wc -l < "$work/dispatches" | tr -d ' ')" == 2 ]]
 
-jq -n --arg version "${tag#v}" '{draft:false, assets: (["linux_amd64","linux_arm64","darwin_amd64","darwin_arm64"] | map({name:("envctl_"+$version+"_"+.+".tar.gz")})) + [{name:"checksums.txt"}]}' > "$work/release.json"
+jq -n --arg version "${tag#v}" '
+    {draft: false, assets: (
+        ["linux_amd64", "linux_arm64", "darwin_amd64", "darwin_arm64"] |
+        map({name: ("envctl_" + $version + "_" + . + ".tar.gz")})
+    )} | .assets += [{name: "checksums.txt"}]
+' > "$work/release.json"
 mock_status=complete
 release_complete "$tag"
 main > /dev/null
