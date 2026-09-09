@@ -6,6 +6,28 @@ set -euo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+# Exercise the documented pipe-to-bash entry point, not just sourced helpers.
+# Help must work both as a file and through stdin without network or installation.
+bash "$script_dir/install.sh" --help > "$work/file-help"
+# The pipeline is the entry point under test.
+# shellcheck disable=SC2002
+cat "$script_dir/install.sh" | bash -s -- --help > "$work/pipe-help"
+cmp "$work/file-help" "$work/pipe-help"
+grep -q 'Usage: install.sh' "$work/pipe-help"
+
+# No-argument piping must enter main too. Stop at platform detection so this
+# regression test cannot install into the host's /usr/local/bin.
+mkdir -p "$work/unsupported-platform"
+printf '#!/bin/sh\nprintf "UnsupportedTestOS\\n"\n' > "$work/unsupported-platform/uname"
+chmod 755 "$work/unsupported-platform/uname"
+# Match curl ... | bash with no script arguments.
+# shellcheck disable=SC2002
+if cat "$script_dir/install.sh" | PATH="$work/unsupported-platform:$PATH" bash > "$work/piped-error" 2>&1; then
+    echo 'Piped installer unexpectedly accepted an unsupported platform' >&2
+    exit 1
+fi
+grep -q 'supported operating systems are Linux and macOS' "$work/piped-error"
+
 mkdir -p "$work/fixture"
 printf '#!/bin/sh\nprintf "envctl v9.0.0\\n"\n' > "$work/fixture/envctl"
 chmod 755 "$work/fixture/envctl"

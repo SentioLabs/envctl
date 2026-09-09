@@ -113,6 +113,8 @@ main() {
     trap - EXIT INT TERM
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+# BASH_SOURCE is unset for curl ... | bash. Keep sourced helpers inert,
+# while allowing both file execution and the documented stdin entry point.
+if [[ "${BASH_SOURCE[0]:-$0}" == "$0" ]]; then
     main "$@"
 fi
