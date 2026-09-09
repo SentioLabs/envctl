@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/sentiolabs/envctl/internal/userconfig"
-	"github.com/sentiolabs/go-selfupdate"
+	"github.com/sentiolabs/selfupdate-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

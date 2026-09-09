@@ -1,0 +1,82 @@
+version: '3'
+
+vars:
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  GIT_COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo unknown
+  BUILD_DATE:
+    sh: date -u +%Y-%m-%dT%H:%M:%SZ
+
+env:
+  LDFLAGS: >-
+    -X github.com/sentiolabs/envctl/internal/version.Version={{.VERSION}}
+    -X github.com/sentiolabs/envctl/internal/version.GitCommit={{.GIT_COMMIT}}
+    -X github.com/sentiolabs/envctl/internal/version.BuildDate={{.BUILD_DATE}}
+
+tasks:
+  default:
+    cmds: [task --list]
+  build:
+    desc: Build envctl with version metadata
+    cmds: ['go build -ldflags "$LDFLAGS" -o bin/envctl ./cmd/envctl']
+  install:
+    desc: Install envctl to GOBIN or GOPATH/bin
+    cmds: ['go install -ldflags "$LDFLAGS" ./cmd/envctl']
+  deps:
+    desc: Download Go dependencies
+    cmds: [go mod download]
+  test:
+    desc: Run all Go tests without cached results
+    cmds: [go test -count=1 ./...]
+  test-coverage:
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+  vet:
+    cmds: [go vet ./...]
+  lint:
+    desc: Lint the entire Go module
+    cmds: [golangci-lint run ./...]
+  check:versions:
+    desc: Check module and mise Go versions agree with the active toolchain
+    cmds:
+      - |
+        mise_go=$(sed -nE 's/^go = "([^"]+)"/\1/p' mise.toml)
+        mod_go=$(awk '$1 == "go" { print $2 }' go.mod)
+        active_go=$(go env GOVERSION)
+        test "$mise_go" = "$mod_go" && test "$active_go" = "go$mod_go" || {
+          echo "Go versions differ: mise=$mise_go module=$mod_go active=$active_go" >&2
+          exit 1
+        }
+  test:scripts:
+    desc: Test the bootstrap and release automation in isolation
+    cmds: [bash scripts/install_test.sh, bash scripts/release_test.sh]
+  ci:
+    desc: Run local CI checks
+    cmds:
+      - task: check:versions
+      - task: deps
+      - task: lint
+      - task: build
+      - task: vet
+      - task: test
+      - task: test:scripts
+  fmt:
+    cmds: [go fmt ./...]
+  tidy:
+    cmds: [go mod tidy]
+  check:
+    cmds:
+      - task: fmt
+      - task: tidy
+      - task: ci
+  clean:
+    cmds: [rm -rf bin/ dist/ coverage.out coverage.html]
+  release:check:
+    cmds: [goreleaser check]
+  release:
+    cmds: [goreleaser release --clean]
+  release-snapshot:
+    desc: Build all release archives without publishing
+    cmds: [goreleaser release --snapshot --clean]

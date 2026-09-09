@@ -1,411 +1,118 @@
 #!/usr/bin/env bash
-#
-# envctl installation script
-# Usage: curl -fsSL https://raw.githubusercontent.com/sentiolabs/envctl/main/scripts/install.sh | bash
-#
-# Options:
-#   --force    Force reinstall even if already up-to-date
-#
-
-set -e
-
-# ============ Configuration ============
+# Bootstrap envctl. Subsequent updates use: envctl self update
+# curl -fsSL https://raw.githubusercontent.com/sentiolabs/envctl/main/scripts/install.sh | bash
+set -euo pipefail
 
 REPO="sentiolabs/envctl"
-BINARY_NAME="envctl"
-FORCE="${FORCE:-false}"
 TAG="${TAG:-}"
+# --force and FORCE are accepted for older envctl self updaters. Bootstrap
+# always installs the requested release; version selection belongs to the CLI.
 
-# ============ Output Formatting ============
+fail() { printf 'envctl: %s\n' "$*" >&2; exit 1; }
 
-# Detect terminal capabilities
-if [[ -t 1 ]] && command -v tput &> /dev/null && [[ $(tput colors 2>/dev/null || echo 0) -ge 8 ]]; then
-    RED='\033[0;31m'
-    GREEN='\033[0;32m'
-    YELLOW='\033[1;33m'
-    BLUE='\033[0;34m'
-    BOLD='\033[1m'
-    DIM='\033[2m'
-    NC='\033[0m'
-else
-    RED=''
-    GREEN=''
-    YELLOW=''
-    BLUE=''
-    BOLD=''
-    DIM=''
-    NC=''
-fi
-
-log_info() {
-    echo -e "${BLUE}→${NC} $1"
+usage() {
+    printf '%s\n' 'Usage: install.sh [--tag TAG|--tag=TAG] [--force]' \
+        'Install the latest stable release, or the given tag.' \
+        'Use envctl self update for subsequent updates.'
 }
 
-log_success() {
-    echo -e "${GREEN}✓${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}!${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}✗${NC} $1" >&2
-}
-
-log_step() {
-    echo -e "${DIM}  $1${NC}"
-}
-
-# ============ Version Detection ============
-
-# Get installed envctl version
-get_installed_version() {
-    if command -v envctl &> /dev/null; then
-        local version_output
-        version_output=$(envctl version 2>/dev/null || echo "")
-        echo "$version_output" | head -1 | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true
-    fi
-}
-
-# Normalize version strings for comparison (remove 'v' prefix)
-normalize_version() {
-    echo "$1" | sed 's/^v//'
-}
-
-# Compare versions: returns 0 if equal, 1 if first > second, 2 if first < second
-compare_versions() {
-    local v1 v2
-    v1=$(normalize_version "$1")
-    v2=$(normalize_version "$2")
-
-    if [[ "$v1" == "$v2" ]]; then
-        return 0
-    fi
-
-    # Use sort -V for version comparison if available
-    if printf '%s\n%s' "$v1" "$v2" | sort -V -C 2>/dev/null; then
-        return 2  # v1 < v2
+# Write to a file so a failed download cannot feed partial data into extraction.
+download() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --connect-timeout 30 --retry 2 -o "$2" "$1"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q --timeout=30 -O "$2" "$1"
     else
-        return 1  # v1 > v2
+        fail 'curl or wget is required'
     fi
 }
 
-# ============ Platform Detection ============
-
-detect_platform() {
-    local os arch
-
-    case "$(uname -s)" in
-        Darwin)
-            os="darwin"
-            ;;
-        Linux)
-            os="linux"
-            ;;
-        *)
-            log_error "Unsupported operating system: $(uname -s)"
-            exit 1
-            ;;
-    esac
-
-    case "$(uname -m)" in
-        x86_64|amd64)
-            arch="amd64"
-            ;;
-        aarch64|arm64)
-            arch="arm64"
-            ;;
-        *)
-            log_error "Unsupported architecture: $(uname -m)"
-            exit 1
-            ;;
-    esac
-
-    echo "${os}_${arch}"
-}
-
-# ============ macOS Code Signing ============
-
-resign_for_macos() {
-    local binary_path=$1
-
-    if [[ "$(uname -s)" != "Darwin" ]]; then
-        return 0
-    fi
-
-    if ! command -v codesign &> /dev/null; then
-        return 0
-    fi
-
-    log_step "Re-signing binary for macOS..."
-    codesign --remove-signature "$binary_path" 2>/dev/null || true
-    if codesign --force --sign - "$binary_path" 2>/dev/null; then
-        log_step "Binary signed"
-    fi
-}
-
-# ============ Release Asset Check ============
-
-release_has_asset() {
-    local release_json=$1
-    local asset_name=$2
-
-    if echo "$release_json" | grep -Fq "\"name\": \"$asset_name\""; then
-        return 0
-    fi
-    return 1
-}
-
-# ============ Installation ============
-
-install_from_release() {
-    local platform=$1
-    local installed_version=$2
-    local tmp_dir
-
-    tmp_dir=$(mktemp -d)
-
-    local latest_version
-    local release_json
-
-    if [[ -n "$TAG" ]]; then
-        # Install a specific version
-        latest_version="$TAG"
-        log_info "Installing specific version: ${latest_version}"
-        local tag_url="https://api.github.com/repos/${REPO}/releases/tags/${TAG}"
-
-        if command -v curl &> /dev/null; then
-            release_json=$(curl -fsSL "$tag_url" 2>/dev/null)
-        elif command -v wget &> /dev/null; then
-            release_json=$(wget -qO- "$tag_url" 2>/dev/null)
-        else
-            log_error "Neither curl nor wget found"
-            rm -rf "$tmp_dir"
-            return 1
-        fi
-    else
-        # Fetch latest release
-        log_info "Checking latest release..."
-        local latest_url="https://api.github.com/repos/${REPO}/releases/latest"
-
-        if command -v curl &> /dev/null; then
-            release_json=$(curl -fsSL "$latest_url" 2>/dev/null)
-        elif command -v wget &> /dev/null; then
-            release_json=$(wget -qO- "$latest_url" 2>/dev/null)
-        else
-            log_error "Neither curl nor wget found"
-            rm -rf "$tmp_dir"
-            return 1
-        fi
-
-        latest_version=$(echo "$release_json" | grep '"tag_name"' | sed -E 's/.*"tag_name": "([^"]+)".*/\1/')
-    fi
-
-    if [[ -z "$latest_version" ]]; then
-        log_error "Failed to fetch latest version"
-        rm -rf "$tmp_dir"
-        return 1
-    fi
-
-    # Version comparison (skip for specific tag installs)
-    if [[ -z "$TAG" ]] && [[ -n "$installed_version" ]] && [[ "$FORCE" != "true" ]]; then
-        if compare_versions "$installed_version" "$latest_version"; then
-            log_success "envctl ${installed_version} is already up to date"
-            rm -rf "$tmp_dir"
-            return 2  # Special return code: already up to date
-        fi
-        log_info "Updating envctl ${installed_version} → ${latest_version}"
-    else
-        log_info "Installing envctl ${latest_version}"
-    fi
-
-    # Download
-    local archive_name="${BINARY_NAME}_${latest_version#v}_${platform}.tar.gz"
-    local download_url="https://github.com/${REPO}/releases/download/${latest_version}/${archive_name}"
-
-    if ! release_has_asset "$release_json" "$archive_name"; then
-        log_error "No prebuilt binary for ${platform}"
-        rm -rf "$tmp_dir"
-        return 1
-    fi
-
-    log_info "Downloading ${archive_name}..."
-    cd "$tmp_dir"
-
-    if command -v curl &> /dev/null; then
-        if ! curl -fsSL --progress-bar -o "$archive_name" "$download_url"; then
-            log_error "Download failed"
-            cd - > /dev/null || cd "$HOME"
-            rm -rf "$tmp_dir"
-            return 1
-        fi
-    elif command -v wget &> /dev/null; then
-        if ! wget -q --show-progress -O "$archive_name" "$download_url" 2>/dev/null; then
-            # Fallback without progress for older wget
-            if ! wget -q -O "$archive_name" "$download_url"; then
-                log_error "Download failed"
-                cd - > /dev/null || cd "$HOME"
-                rm -rf "$tmp_dir"
-                return 1
-            fi
-        fi
-    fi
-
-    # Extract
-    log_step "Extracting..."
-    if ! tar -xzf "$archive_name"; then
-        log_error "Failed to extract archive"
-        cd - > /dev/null || cd "$HOME"
-        rm -rf "$tmp_dir"
-        return 1
-    fi
-
-    # Determine install location
-    local install_dir
+install_directory() {
     if [[ -w /usr/local/bin ]]; then
-        install_dir="/usr/local/bin"
+        printf '%s\n' /usr/local/bin
     else
-        install_dir="$HOME/.local/bin"
-        mkdir -p "$install_dir"
+        printf '%s\n' "$HOME/.local/bin"
     fi
-
-    # Install
-    log_step "Installing to ${install_dir}..."
-    if [[ -w "$install_dir" ]]; then
-        mv "$BINARY_NAME" "$install_dir/"
-    else
-        sudo mv "$BINARY_NAME" "$install_dir/"
-    fi
-
-    resign_for_macos "$install_dir/$BINARY_NAME"
-
-    cd - > /dev/null || cd "$HOME"
-    rm -rf "$tmp_dir"
-
-    log_success "Installed envctl ${latest_version} to ${install_dir}/${BINARY_NAME}"
-
-    # PATH warning
-    if [[ ":$PATH:" != *":$install_dir:"* ]]; then
-        echo ""
-        log_warning "${install_dir} is not in your PATH"
-        echo -e "  Add to your shell profile: ${BOLD}export PATH=\"\$PATH:$install_dir\"${NC}"
-    fi
-
-    return 0
 }
-
-# ============ Verification ============
-
-verify_installation() {
-    if ! command -v envctl &> /dev/null; then
-        return 1
-    fi
-
-    echo ""
-    echo -e "${BOLD}envctl${NC} is ready!"
-    echo ""
-    envctl version 2>/dev/null || echo "envctl (development build)"
-    echo ""
-    echo "Get started:"
-    echo "  envctl --help        Show all commands"
-    echo "  envctl init          Create starter config"
-    echo "  envctl validate      Validate config and connectivity"
-    echo ""
-}
-
-# ============ Help ============
-
-show_help() {
-    echo "envctl Installer"
-    echo ""
-    echo "Usage: $0 [options]"
-    echo ""
-    echo "Options:"
-    echo "  --force        Force reinstall even if already up-to-date"
-    echo "  --tag TAG      Install a specific version (e.g., v0.2.0-rc.1)"
-    echo "  --help         Show this help message"
-    echo ""
-    echo "Examples:"
-    echo "  curl -fsSL https://raw.githubusercontent.com/sentiolabs/envctl/main/scripts/install.sh | bash"
-    echo "  curl -fsSL ... | bash -s -- --force"
-    echo "  curl -fsSL ... | bash -s -- --tag=v0.2.0-rc.1"
-    echo ""
-}
-
-# ============ Main ============
 
 main() {
-    # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --force|-f)
-                FORCE="true"
-                shift
-                ;;
             --tag)
-                TAG="$2"
-                shift 2
-                ;;
-            --tag=*)
-                TAG="${1#*=}"
-                shift
-                ;;
-            --help|-h)
-                show_help
-                exit 0
-                ;;
-            *)
-                log_error "Unknown option: $1"
-                show_help
-                exit 1
-                ;;
+                [[ $# -ge 2 && -n "$2" ]] || fail '--tag requires a value'
+                TAG="$2"; shift 2 ;;
+            --tag=*) TAG="${1#*=}"; [[ -n "$TAG" ]] || fail '--tag requires a value'; shift ;;
+            --force|-f) shift ;;
+            --help|-h) usage; return ;;
+            *) fail "unknown option: $1" ;;
         esac
     done
 
-    echo ""
-    echo -e "${BOLD}envctl Installer${NC}"
-    echo ""
+    local os arch
+    case "$(uname -s)" in
+        Linux) os=linux ;;
+        Darwin) os=darwin ;;
+        *) fail 'supported operating systems are Linux and macOS' ;;
+    esac
+    case "$(uname -m)" in
+        x86_64|amd64) arch=amd64 ;;
+        aarch64|arm64) arch=arm64 ;;
+        *) fail 'supported architectures are amd64 and arm64' ;;
+    esac
 
-    # Detect platform
-    local platform
-    platform=$(detect_platform)
-    log_step "Platform: ${platform}"
+    bootstrap_staged=''
+    bootstrap_tmp_dir=$(mktemp -d)
+    # Cleanup paths stay available after Bash unwinds a failed function.
+    trap 'rm -rf "$bootstrap_tmp_dir"; if [[ -n "$bootstrap_staged" ]]; then rm -f "$bootstrap_staged"; fi' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
 
-    # Check installed version
-    local installed_version
-    installed_version=$(get_installed_version)
-    if [[ -n "$installed_version" ]]; then
-        log_step "Installed: ${installed_version}"
+    if [[ -z "$TAG" ]]; then
+        download "https://api.github.com/repos/${REPO}/releases/latest" "$bootstrap_tmp_dir/release.json"
+        TAG=$(sed -nE 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$bootstrap_tmp_dir/release.json")
     fi
+    [[ "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[[:alnum:].-]+)?$ ]] || fail "invalid release tag: $TAG"
+    local archive="envctl_${TAG#v}_${os}_${arch}.tar.gz"
+    local base="https://github.com/${REPO}/releases/download/${TAG}"
+    printf 'Installing envctl %s (%s/%s)...\n' "$TAG" "$os" "$arch"
+    download "$base/$archive" "$bootstrap_tmp_dir/$archive"
+    download "$base/checksums.txt" "$bootstrap_tmp_dir/checksums.txt"
 
-    # Install
-    local result
-    if install_from_release "$platform" "$installed_version"; then
-        verify_installation
-        exit 0
+    local expected actual
+    expected=$(awk -v name="$archive" '$2 == name || $2 == "*" name {print $1}' "$bootstrap_tmp_dir/checksums.txt")
+    [[ "$expected" =~ ^[[:xdigit:]]{64}$ ]] || fail "missing or invalid checksum for $archive"
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "$bootstrap_tmp_dir/$archive")
+    elif command -v shasum >/dev/null 2>&1; then
+        actual=$(shasum -a 256 "$bootstrap_tmp_dir/$archive")
     else
-        result=$?
-        if [[ $result -eq 2 ]]; then
-            # Already up to date
-            exit 0
-        fi
+        fail 'sha256sum or shasum is required'
     fi
+    [[ "${actual%% *}" == "$expected" ]] || fail "checksum mismatch for $archive"
+    # Extract only the binary, never unrelated archive entries or paths.
+    tar -xzOf "$bootstrap_tmp_dir/$archive" envctl > "$bootstrap_tmp_dir/envctl"
+    [[ -s "$bootstrap_tmp_dir/envctl" ]] || fail 'archive contains an empty binary'
 
-    # Installation failed
-    echo ""
-    log_error "Installation failed"
-    echo ""
-    echo "Manual installation options:"
-    echo ""
-    echo "  1. Download from https://github.com/${REPO}/releases/latest"
-    echo "     Extract and move 'envctl' to your PATH"
-    echo ""
-    echo "  2. Build from source (requires Go 1.26+):"
-    echo "     git clone https://github.com/${REPO}.git"
-    echo "     cd envctl && make build"
-    echo ""
-    exit 1
+    local install_dir
+    install_dir=$(install_directory)
+    mkdir -p "$install_dir"
+    bootstrap_staged=$(mktemp "$install_dir/.envctl.XXXXXX")
+    cp "$bootstrap_tmp_dir/envctl" "$bootstrap_staged"
+    chmod 755 "$bootstrap_staged"
+    if [[ "$os" == darwin ]] && command -v codesign >/dev/null 2>&1; then
+        codesign --force --sign - "$bootstrap_staged" 2>/dev/null || printf 'Warning: could not ad-hoc sign envctl\n' >&2
+    fi
+    mv -f "$bootstrap_staged" "$install_dir/envctl"
+    bootstrap_staged=''
+    printf 'Installed envctl %s to %s/envctl\n' "$TAG" "$install_dir"
+    if [[ ":$PATH:" != *":$install_dir:"* ]]; then
+        printf 'Add %s to your PATH.\n' "$install_dir"
+    fi
+    printf 'For updates, run: envctl self update\n'
+    rm -rf "$bootstrap_tmp_dir"
+    trap - EXIT INT TERM
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
