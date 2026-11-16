@@ -104,6 +104,19 @@ func writeJSONFormat(w io.Writer, entries []env.Entry) error {
 	return encoder.Encode(m)
 }
 
+// WriteJSONApps writes several applications' entries as one JSON object
+// keyed by application name: {"app": {"KEY": "VALUE"}}.
+func WriteJSONApps(w io.Writer, apps map[string][]env.Entry) error {
+	out := make(map[string]map[string]string, len(apps))
+	for app, entries := range apps {
+		out[app] = env.ToMap(entries)
+	}
+
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(out)
+}
+
 // sortEntries returns entries sorted by key.
 func sortEntries(entries []env.Entry) []env.Entry {
 	sorted := make([]env.Entry, len(entries))

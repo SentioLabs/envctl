@@ -221,3 +221,24 @@ func TestQuoteValue(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteJSONApps(t *testing.T) {
+	apps := map[string][]env.Entry{
+		"api": {{Key: "SHARED", Value: "api-value", Source: sourceTest}},
+		"web": {{Key: "SHARED", Value: "web-value", Source: sourceTest}},
+	}
+
+	var buf bytes.Buffer
+	if err := WriteJSONApps(&buf, apps); err != nil {
+		t.Fatalf("WriteJSONApps: %v", err)
+	}
+
+	var got map[string]map[string]string
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, buf.String())
+	}
+	// The same key keeps a separate value per application.
+	if got["api"]["SHARED"] != "api-value" || got["web"]["SHARED"] != "web-value" {
+		t.Fatalf("unexpected output: %v", got)
+	}
+}
