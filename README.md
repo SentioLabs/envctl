@@ -386,6 +386,25 @@ envctl export --format env    # KEY=VALUE
 envctl export --format json   # {"KEY": "VALUE"}
 ```
 
+### Several Applications in One Run
+
+`--apps` exports several applications as one JSON object keyed by
+application name. It needs `--format json` and a config with
+`applications:`. A secret that more than one application includes is read
+from the backend once per run, so a 1Password config authorizes once
+instead of once per application:
+
+```bash
+envctl export --apps api,worker,web --env local --format json
+# {"api": {"KEY": "VALUE"}, "web": {...}, "worker": {...}}
+```
+
+Each application keeps its own values, so a key that two applications
+resolve differently stays correct in each. The run fails as a whole if any
+application fails, and prints nothing. A tool that starts several services
+(a Tilt or Skaffold dev loop, a test harness) can call this once and hand
+each service its own object.
+
 ### Inspect Secrets
 
 ```bash
@@ -1010,6 +1029,8 @@ envctl export [flags]
 
 Flags:
   --format FORMAT   Output format: env, shell, json (default: shell)
+  --apps A,B        Export these applications as {"app": {"KEY": "VALUE"}};
+                    needs --format json, can't be combined with --app
 ```
 
 #### `envctl list`

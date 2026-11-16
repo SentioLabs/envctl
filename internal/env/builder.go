@@ -20,6 +20,10 @@ type Entry struct {
 type BuilderOptions struct {
 	NoCache bool
 	Refresh bool
+	// Memo, when set, wraps every client the builder creates for an include,
+	// so a secret shared with another builder in the same run is read once.
+	// The caller wraps the primary client itself.
+	Memo *secrets.Memo
 }
 
 // ResolvedFile is a file sink with its content fetched.
@@ -46,6 +50,7 @@ type Builder struct {
 	includeAll *bool               // CLI override for include_all setting
 	noCache    bool
 	refresh    bool
+	memo       *secrets.Memo
 	newClient  func(ctx context.Context, opts secrets.Options) (secrets.Client, error)
 }
 
@@ -73,6 +78,7 @@ func (b *Builder) WithIncludeAll(val *bool) *Builder {
 func (b *Builder) WithOptions(opts BuilderOptions) *Builder {
 	b.noCache = opts.NoCache
 	b.refresh = opts.Refresh
+	b.memo = opts.Memo
 	return b
 }
 
@@ -247,12 +253,16 @@ func (b *Builder) clientForInclude(ctx context.Context, inc config.IncludeEntry)
 
 	syntheticEnv := config.NewEnvironment(inc)
 
-	return b.newClient(ctx, secrets.Options{
+	client, err := b.newClient(ctx, secrets.Options{
 		Config:  b.config,
 		Env:     &syntheticEnv,
 		NoCache: b.noCache,
 		Refresh: b.refresh,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return b.memo.Wrap(client, secrets.Scope(b.config, &syntheticEnv)), nil
 }
 
 // processIncludes processes a list of include entries.

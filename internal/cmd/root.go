@@ -310,8 +310,16 @@ func resolveConfigPath() (string, error) {
 // resolveEnvironmentConfig resolves the environment config based on mode.
 // Returns the environment config and, if in application mode, the application config.
 func resolveEnvironmentConfig(cfg *config.Config) (*config.Environment, *config.Application, error) {
+	return resolveEnvironmentConfigFor(cfg, appName)
+}
+
+// resolveEnvironmentConfigFor is resolveEnvironmentConfig for a named
+// application instead of the --app flag. Legacy configs ignore application.
+func resolveEnvironmentConfigFor(
+	cfg *config.Config, application string,
+) (*config.Environment, *config.Application, error) {
 	if cfg.HasApplications() {
-		env, app, err := cfg.GetApplicationEnvironment(appName, envName)
+		env, app, err := cfg.GetApplicationEnvironment(application, envName)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -352,18 +360,47 @@ func loadAndBuildFiles(
 	overrides map[string]string,
 	mode sinkMode,
 ) (*buildOutput, error) {
-	configPath, err := resolveConfigPath()
+	configPath, cfg, err := loadConfig()
 	if err != nil {
 		return nil, err
+	}
+	return buildApp(ctx, cmd, appBuild{
+		cfg: cfg, configPath: configPath, application: appName, overrides: overrides, mode: mode,
+	})
+}
+
+// loadConfig finds and parses the config the --config flag names.
+func loadConfig() (string, *config.Config, error) {
+	configPath, err := resolveConfigPath()
+	if err != nil {
+		return "", nil, err
 	}
 	verboseLog("Using config: %s", configPath)
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
+	return configPath, cfg, nil
+}
 
-	envConfig, app, err := resolveEnvironmentConfig(cfg)
+// appBuild is one application's build inside an already loaded config.
+type appBuild struct {
+	cfg         *config.Config
+	configPath  string
+	application string
+	overrides   map[string]string
+	mode        sinkMode
+	// memo is shared by every application built in one invocation. Nil
+	// leaves every read going to the backend.
+	memo *secrets.Memo
+}
+
+// buildApp resolves one application's entries and file sinks, writes the
+// sinks according to mode, and merges their path variables into the entries.
+func buildApp(ctx context.Context, cmd *cobra.Command, in appBuild) (*buildOutput, error) {
+	cfg, configPath := in.cfg, in.configPath
+	envConfig, app, err := resolveEnvironmentConfigFor(cfg, in.application)
 	if err != nil {
 		return nil, err
 	}
@@ -378,17 +415,18 @@ func loadAndBuildFiles(
 	if err != nil {
 		return nil, err
 	}
+	client = in.memo.Wrap(client, secrets.Scope(cfg, envConfig))
 
-	builder := env.NewBuilder(client, cfg, appName, envName).
+	builder := env.NewBuilder(client, cfg, in.application, envName).
 		WithIncludeAll(getIncludeAllOverride(cmd)).
-		WithOptions(env.BuilderOptions{NoCache: noCache, Refresh: refresh})
+		WithOptions(env.BuilderOptions{NoCache: noCache, Refresh: refresh, Memo: in.memo})
 
-	result, err := builder.BuildWithFiles(ctx, overrides)
+	result, err := builder.BuildWithFiles(ctx, in.overrides)
 	if err != nil {
 		return nil, err
 	}
 
-	files, err := materializeFiles(result.Files, cfg.ResolveFilesDirAs(app), filepath.Dir(configPath), mode)
+	files, err := materializeFiles(result.Files, cfg.ResolveFilesDirAs(app), filepath.Dir(configPath), in.mode)
 	if err != nil {
 		return nil, err
 	}

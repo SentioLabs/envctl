@@ -224,3 +224,14 @@ Later sources in the list override earlier ones when keys conflict.
 You can also use inline aws: or 1pass: blocks on source entries for
 per-source overrides (region, profile, vault) without needing the
 backend: routing hint.
+
+Several Applications at Once
+----------------------------
+
+A dev loop that starts several services can fetch all of them in one run:
+
+  envctl export --apps api,worker,web --env local --format json
+
+The output is {"app": {"KEY": "VALUE"}}, one object per application. A
+secret shared by several applications is read from the backend once, so
+1Password prompts once. Any failing application fails the whole run.
