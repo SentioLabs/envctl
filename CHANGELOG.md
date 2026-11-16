@@ -2,6 +2,13 @@
 
 All notable changes to envctl will be documented in this file.
 
+## [0.8.0](https://github.com/SentioLabs/envctl/compare/v0.7.0...v0.8.0) (2026-11-16)
+
+
+### Features
+
+* **export:** add --apps for multi-app JSON export ([676ac23](https://github.com/SentioLabs/envctl/commit/676ac23e235c4999509407cd7e45f9f110942778))
+
 ## [0.7.0](https://github.com/SentioLabs/envctl/compare/v0.6.0...v0.7.0) (2026-09-09)
 
 
